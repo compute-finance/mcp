@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+
+// ── Subcommand router ───────────────────────────────────────────────
+// `npx @compute-finance/mcp`       → stdio MCP server (default)
+// `npx @compute-finance/mcp setup` → install skills + register MCP
+if (process.argv[2] === "setup") {
+  await import("./setup.js");
+  process.exit(0);
+}
+
 /**
  * Compute Finance MCP Server
  *
@@ -62,7 +71,7 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 const server = new Server(
-  { name: "compute-finance-mcp", version: pkg.version },
+  { name: "@compute-finance/mcp", version: pkg.version },
   { capabilities: { tools: {} } },
 );
 
@@ -167,7 +176,7 @@ const toolDefinitions: ToolDef[] = [
   {
     name: "render_consumption_report",
     description:
-      "CODE-DRIVEN ENTRY POINT for cf-session-consumption. Returns a pre-formatted per-turn breakdown (bar chart, tool aggregates, mechanical facts) as a single `text` string. Persists turns to ~/.compute-finance-mcp/turns.jsonl. Skills must print verbatim.",
+      "CODE-DRIVEN ENTRY POINT for cf-session-consumption. Returns a pre-formatted per-turn breakdown (bar chart, tool aggregates, mechanical facts) as a single `text` string. Persists turns to ~/.compute-finance/turns.jsonl. Skills must print verbatim.",
     inputSchema: {
       type: "object",
       properties: {

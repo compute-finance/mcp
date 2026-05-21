@@ -1,0 +1,56 @@
+{
+  "name": "@compute-finance/mcp",
+  "version": "0.0.0",
+  "description": "Live AI compute pricing oracle MCP server — real-time LLM model prices across providers. Includes Claude Code skills for session cost analysis.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Compute Finance",
+  "homepage": "https://github.com/compute-finance/mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/compute-finance/mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/compute-finance/mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "llm",
+    "pricing",
+    "oracle",
+    "compute-finance",
+    "ai",
+    "claude-code",
+    "claude-code-skills",
+    "ai-compute",
+    "token-pricing"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/",
+    "skills/"
+  ],
+  "bin": {
+    "compute-finance": "dist/index.js"
+  },
+  "scripts": {
+    "clean": "node -e \"const fs=require('fs');try{fs.rmSync('dist',{recursive:true,force:true})}catch{};const g=require('path').resolve('tsconfig.build.tsbuildinfo');try{fs.unlinkSync(g)}catch{}\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "tsx --test src/oracle/openapi-schema.test.ts src/oracle/field-map.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

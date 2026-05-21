@@ -69,7 +69,7 @@ const DEFAULT_RECON: ReconFieldMap = {
 
 // ── Persistence ─────────────────────────────────────────────────────
 
-const PERSIST_DIR = join(homedir(), ".compute-finance-mcp");
+const PERSIST_DIR = join(homedir(), ".compute-finance");
 const PERSIST_PATH = join(PERSIST_DIR, "field-map.json");
 
 function persistToDisk(map: FieldMap): void {

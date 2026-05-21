@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ModelPrice } from "../oracle/types.js";
 import { effectiveCost } from "../oracle/client.js";
 
-const DIR = join(homedir(), ".compute-finance-mcp");
+const DIR = join(homedir(), ".compute-finance");
 const SESSIONS = join(DIR, "sessions.jsonl");
 
 function ensureDir() {

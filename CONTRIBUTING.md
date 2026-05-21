@@ -5,8 +5,8 @@ Thanks for your interest in contributing! This document covers the basics.
 ## Development setup
 
 ```bash
-git clone https://github.com/compute-finance/compute-finance-mcp.git
-cd compute-finance-mcp/mcp
+git clone https://github.com/compute-finance/mcp.git
+cd mcp
 npm install
 npm run build
 ```

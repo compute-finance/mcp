@@ -8,7 +8,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DIR = join(homedir(), ".compute-finance-mcp");
+const DIR = join(homedir(), ".compute-finance");
 const TURNS = join(DIR, "turns.jsonl");
 
 function ensureDir() {
@@ -213,7 +213,7 @@ export function parseTurns(transcriptPath: string): TurnAnalysis {
 export function logTurns(turns: TurnRecord[]): { logged: number; path: string } {
   ensureDir();
   if (turns.length === 0) {
-    return { logged: 0, path: "~/.compute-finance-mcp/turns.jsonl" };
+    return { logged: 0, path: "~/.compute-finance/turns.jsonl" };
   }
   // Dedupe-on-write: re-running the skill on the same session must not
   // balloon the file with duplicate rows. One batch always belongs to a
@@ -240,5 +240,5 @@ export function logTurns(turns: TurnRecord[]): { logged: number; path: string } 
   const tmp = TURNS + ".tmp";
   writeFileSync(tmp, body);
   renameSync(tmp, TURNS);
-  return { logged: turns.length, path: "~/.compute-finance-mcp/turns.jsonl" };
+  return { logged: turns.length, path: "~/.compute-finance/turns.jsonl" };
 }
