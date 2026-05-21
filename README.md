@@ -1,5 +1,9 @@
 # @compute-finance/mcp
 
+[![npm version](https://img.shields.io/npm/v/@compute-finance/mcp.svg)](https://www.npmjs.com/package/@compute-finance/mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@compute-finance/mcp.svg)](https://www.npmjs.com/package/@compute-finance/mcp)
+[![license](https://img.shields.io/npm/l/@compute-finance/mcp.svg)](https://github.com/compute-finance/mcp/blob/main/LICENSE)
+
 Live AI compute pricing oracle — real-time LLM model prices across providers (Anthropic, OpenAI, Google, xAI) via the [Compute Finance Oracle](https://compute.finance).
 
 A stdio [MCP](https://modelcontextprotocol.io) server. Works in any MCP client. Includes optional Claude Code skills for session cost analysis.
