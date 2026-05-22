@@ -2,12 +2,19 @@
  * CLI setup module for `npx @compute-finance/mcp setup`.
  *
  * Dynamically imported from index.ts when `process.argv[2] === "setup"`.
- * Copies skill definitions to ~/.claude/skills/ and registers the MCP
- * server with the Claude CLI.
+ * Copies skill definitions to ~/.claude/skills/, registers the MCP
+ * server with the Claude CLI, and installs the cost hook
+ * (UserPromptSubmit) into ~/.claude/settings.json.
  *
  * Zero extra dependencies — only node: builtins.
  */
-import { existsSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
@@ -127,7 +134,87 @@ if (!skillsOnly) {
   console.log();
 }
 
-// ── 3. Summary ──────────────────────────────────────────────────────
+// ── 3. Install cost hook (UserPromptSubmit) ─────────────────────────
+
+let hookInstalled = false;
+
+if (!mcpOnly) {
+  const SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
+  const HOOK_COMMAND = `npx ${PKG_NAME} hook-prompt`;
+
+  try {
+    let settings: Record<string, unknown> = {};
+    if (existsSync(SETTINGS_PATH)) {
+      try {
+        settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+      } catch {
+        // Corrupt settings — start fresh object but don't overwrite file yet
+        settings = {};
+      }
+    }
+
+    // Ensure hooks.UserPromptSubmit exists as an array of matcher objects
+    if (!settings.hooks || typeof settings.hooks !== "object") {
+      settings.hooks = {};
+    }
+    const hooks = settings.hooks as Record<string, unknown>;
+    if (!Array.isArray(hooks.UserPromptSubmit)) {
+      hooks.UserPromptSubmit = [];
+    }
+    const matchers = hooks.UserPromptSubmit as Record<string, unknown>[];
+
+    // Check if our hook is already installed (deep search for command)
+    const alreadyInstalled = matchers.some((matcher) => {
+      const inner = matcher.hooks;
+      if (!Array.isArray(inner)) return false;
+      return inner.some(
+        (h: Record<string, unknown>) =>
+          typeof h.command === "string" &&
+          h.command.includes(PKG_NAME) &&
+          h.command.includes("hook-prompt"),
+      );
+    });
+
+    if (!alreadyInstalled) {
+      matchers.push({
+        matcher: "",
+        hooks: [
+          {
+            type: "command",
+            command: HOOK_COMMAND,
+          },
+        ],
+      });
+
+      writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+      console.log(
+        green("  ✓ Cost hook installed"),
+        dim("(UserPromptSubmit, rate-limited, fires when session > $1)"),
+      );
+      hookInstalled = true;
+    } else {
+      console.log(
+        green("  ✓ Cost hook"),
+        dim("(already installed)"),
+      );
+      hookInstalled = true;
+    }
+  } catch (err) {
+    console.log(yellow("  ⚠ Cost hook installation failed."));
+    console.log(dim(`    Error: ${(err as Error).message}`));
+    console.log();
+    console.log("  Add manually to ~/.claude/settings.json:");
+    console.log(
+      dim(
+        `    { "hooks": { "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "${HOOK_COMMAND}" }] }] } }`,
+      ),
+    );
+  }
+
+  console.log();
+}
+
+// ── 4. Summary ──────────────────────────────────────────────────────
 
 console.log(dim("  ────────────────────────────────────"));
 
@@ -138,6 +225,9 @@ if (installed.length > 0) {
 }
 if (mcpRegistered) {
   console.log(`  MCP server:       ${green("registered")}`);
+}
+if (hookInstalled) {
+  console.log(`  Cost hook:        ${green("active")}`);
 }
 
 console.log();
