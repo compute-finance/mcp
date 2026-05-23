@@ -23,23 +23,24 @@ This single command:
 
 Restart Claude Code after setup.
 
-### Any MCP client
+Or register manually without skills/hook:
 
-Register the server in your client config:
-
-```json
-{
-  "command": "npx",
-  "args": ["@compute-finance/mcp"]
-}
+```bash
+claude mcp add --scope user compute-finance -- npx @compute-finance/mcp
 ```
 
-Or with a direct path:
+### Cursor / VS Code / Any MCP client
+
+Add to your MCP config (`.cursor/mcp.json`, VS Code settings, etc.):
 
 ```json
 {
-  "command": "node",
-  "args": ["node_modules/@compute-finance/mcp/dist/index.js"]
+  "mcpServers": {
+    "compute-finance": {
+      "command": "npx",
+      "args": ["@compute-finance/mcp"]
+    }
+  }
 }
 ```
 
@@ -54,15 +55,46 @@ npx . setup
 
 ## Tools
 
-14 tools across four layers — no API key required:
+14 tools across five layers — no API key required. All tools are read-only.
 
-| Layer | Tools | Purpose |
-|-------|-------|---------|
-| **Data** | `data_get_basket`, `data_get_price`, `data_get_scu`, `data_get_cpi`, `data_get_tiers`, `data_get_reconstitutions` | Live oracle queries |
-| **Compute** | `compute_estimate`, `compute_compare` | Derived cost calculations |
-| **Render** | `render_session_report`, `render_consumption_report`, `render_active_sessions` | Pre-formatted output for skills |
-| **Analysis** | `analyze_session`, `analyze_turns` | Raw JSON for custom UI |
-| **History** | `telemetry_get_history` | Local aggregated stats |
+### Data (live oracle)
+
+| Tool | Description |
+|------|-------------|
+| `data_get_basket` | All models with provider, tier, USD prices per million tokens, cache multipliers |
+| `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) |
+| `data_get_scu` | Current Standard Compute Unit — the market benchmark price |
+| `data_get_cpi` | Full Compute Price Index — basket with SCU breakdown, version, raw/marked-up prices |
+| `data_get_tiers` | Tier weights (frontier, standard, lightweight) and per-tier averages |
+| `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
+
+### Compute
+
+| Tool | Description |
+|------|-------------|
+| `compute_estimate` | Nominal USD cost for a model given input/output token counts |
+| `compute_compare` | Rank all basket models by cost for a workload, grouped by tier |
+
+### Render (Claude Code skills)
+
+| Tool | Description |
+|------|-------------|
+| `render_session_report` | Pre-formatted session cost report — used by `/cf-session-management` |
+| `render_consumption_report` | Pre-formatted per-turn breakdown — used by `/cf-session-consumption` |
+| `render_active_sessions` | Overview of recent sessions across projects — used by `/cf-active-sessions` |
+
+### Analysis
+
+| Tool | Description |
+|------|-------------|
+| `analyze_session` | Raw JSON session analysis (for custom UI, not skills) |
+| `analyze_turns` | Raw JSON per-turn breakdown (for custom UI, not skills) |
+
+### History
+
+| Tool | Description |
+|------|-------------|
+| `telemetry_get_history` | Aggregate stats across logged sessions — cumulative cost, per-profile medians, insights |
 
 ## Cost hook
 
@@ -107,6 +139,7 @@ All data stays on your machine. The only network calls are unauthenticated GETs 
 
 ## Links
 
-- [Documentation](https://github.com/compute-finance/mcp#readme)
 - [Compute Finance](https://compute.finance)
 - [Oracle API](https://api.compute.finance)
+- [OpenAPI spec](https://api.compute.finance/v1/openapi.yaml)
+- [npm package](https://www.npmjs.com/package/@compute-finance/mcp)
