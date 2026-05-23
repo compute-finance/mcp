@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
 // ── Subcommand router ───────────────────────────────────────────────
-// `npx @compute-finance/mcp`       → stdio MCP server (default)
-// `npx @compute-finance/mcp setup` → install skills + register MCP
+// `npx @compute-finance/mcp`             → stdio MCP server (default)
+// `npx @compute-finance/mcp setup`       → install skills + register MCP
+// `npx @compute-finance/mcp hook-prompt` → UserPromptSubmit hook (cost inject)
 if (process.argv[2] === "setup") {
   await import("./setup.js");
+  process.exit(0);
+}
+if (process.argv[2] === "hook-prompt") {
+  await import("./hooks/prompt-cost-inject.js");
   process.exit(0);
 }
 
@@ -63,6 +68,81 @@ import { renderSessionReport } from "./render/session_report.js";
 import { renderConsumptionReport } from "./render/consumption_report.js";
 import { renderActiveSessions } from "./render/sessions_list.js";
 import { round } from "./render/format.js";
+
+// ── Session context ──────────────────────────────────────────────────
+// Lightweight enrichment: every tool response gets a `_session_context`
+// field so Claude (or any MCP client) can see session-level cost without
+// a separate tool call. Fail-silent — never blocks a response.
+
+interface SessionContext {
+  turns_so_far: number;
+  cost_so_far_usd: number;
+  most_expensive_turn: { turn: number; cost: number } | null;
+}
+
+// NOTE: No initFieldMap() call here — it's already guaranteed by
+// startupPromise (line ~356) which runs before any CallToolRequest.
+async function getSessionContext(): Promise<SessionContext | null> {
+  try {
+    const path = findLatestSessionFile();
+    if (!path) return null;
+    const usage = parseSessionUsage(path);
+    if (usage.turns < 1) return null;
+
+    const basket = await getBasketPrices();
+    const normalized = resolveCanonicalIn(usage.model, basket);
+    const price = normalized
+      ? (basket.find((p) => p.model === normalized) ?? null)
+      : null;
+
+    let cost_so_far = 0;
+    if (price) {
+      cost_so_far = effectiveCost(
+        price,
+        usage.raw_input_tokens,
+        usage.cache_read_tokens,
+        usage.cache_creation_tokens,
+        usage.output_tokens,
+      ).effective_usd;
+    }
+
+    // Find the most expensive turn.
+    let mostExpensive: { turn: number; cost: number } | null = null;
+    if (price && usage.turns >= 2) {
+      try {
+        const turnData = parseTurns(path);
+        let maxCost = 0;
+        let maxIdx = 0;
+        for (const t of turnData.turns) {
+          const tc = effectiveCost(
+            price,
+            t.raw_input_tokens,
+            t.cache_read_tokens,
+            t.cache_creation_tokens,
+            t.output_tokens,
+          ).effective_usd;
+          if (tc > maxCost) {
+            maxCost = tc;
+            maxIdx = t.turn_index;
+          }
+        }
+        if (maxCost > 0) {
+          mostExpensive = { turn: maxIdx, cost: round(maxCost, 4) };
+        }
+      } catch {
+        // parseTurns failed — skip, non-critical
+      }
+    }
+
+    return {
+      turns_so_far: usage.turns,
+      cost_so_far_usd: round(cost_so_far, 4),
+      most_expensive_turn: mostExpensive,
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Single source of truth: read version from package.json at runtime.
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -292,7 +372,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     switch (name) {
       case "data_get_basket": {
         const basket = await getBasketPrices();
-        return text({
+        return textWithContext({
           models: basket,
           source: "api.compute.finance/v1/oracle/basket (+ /v1/oracle/pricing for cache multipliers when published)",
         });
@@ -302,16 +382,16 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof model !== "string") return errorText(model.error);
         const price = await getModelPrice(model);
         if (!price) return errorText(`Model not in basket: ${model}`);
-        return text(price);
+        return textWithContext(price);
       }
       case "data_get_scu": {
-        return text(await getScu());
+        return textWithContext(await getScu());
       }
       case "data_get_cpi": {
-        return text(await getCpi());
+        return textWithContext(await getCpi());
       }
       case "data_get_tiers": {
-        return text(await getTiers());
+        return textWithContext(await getTiers());
       }
       case "data_get_reconstitutions": {
         const limit = optionalPositiveNumber(a.limit, "limit");
@@ -324,7 +404,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             new Date(b[fm.sort_date] as string).getTime() -
             new Date(a[fm.sort_date] as string).getTime(),
         );
-        return text(
+        return textWithContext(
           typeof limit === "number"
             ? { [fm.entries_array]: sorted.slice(0, limit) }
             : { [fm.entries_array]: sorted },
@@ -340,7 +420,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const price = await getModelPrice(model);
         if (!price) return errorText(`Model not in basket: ${model}`);
         const usd = costUsd(price, inT, outT);
-        return text({
+        return textWithContext({
           model: price.model,
           input_tokens: inT,
           output_tokens: outT,
@@ -362,7 +442,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             usd_cost: round(costUsd(p, inT, outT), 6),
           }))
           .sort((x, y) => x.usd_cost - y.usd_cost);
-        return text({
+        return textWithContext({
           input_tokens: inT,
           output_tokens: outT,
           ranked,
@@ -590,6 +670,15 @@ function text(obj: unknown) {
   return {
     content: [{ type: "text", text: JSON.stringify(obj, null, 2) }],
   };
+}
+
+/** Like text(), but enriches the response with _session_context.
+ *  Used for data/compute tools where ambient cost context is useful.
+ *  Fails silently to plain text() if context is unavailable. */
+async function textWithContext(obj: unknown) {
+  const ctx = await getSessionContext();
+  if (!ctx || typeof obj !== "object" || obj === null) return text(obj);
+  return text({ ...obj, _session_context: ctx });
 }
 
 function isErrorResult(v: unknown): v is { error: string } {

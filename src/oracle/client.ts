@@ -223,6 +223,7 @@ function canonicalizeIn(raw: string, ids: Set<string>): string | null {
   const stripped = raw.replace(/\[[^\]]+\]/g, "").replace(/-\d{8,}$/, "");
   if (ids.has(stripped)) return stripped;
   // Walk each `\d-\d` boundary, replace with dot, check.
+  let dotNormalized = stripped;
   for (let i = 1; i < stripped.length - 1; i++) {
     if (
       stripped[i] === "-" &&
@@ -231,7 +232,25 @@ function canonicalizeIn(raw: string, ids: Set<string>): string | null {
     ) {
       const candidate = stripped.slice(0, i) + "." + stripped.slice(i + 1);
       if (ids.has(candidate)) return candidate;
+      dotNormalized = candidate;
     }
+  }
+  // Family fallback: match by provider-family prefix (e.g. "claude-opus")
+  // and pick the closest version from the basket.
+  const familyMatch = dotNormalized.match(/^(.+?)-(\d+(?:\.\d+)?)$/);
+  if (familyMatch) {
+    const family = familyMatch[1];       // e.g. "claude-opus"
+    const version = parseFloat(familyMatch[2]); // e.g. 4.6
+    let best: string | null = null;
+    let bestDist = Infinity;
+    for (const id of ids) {
+      const m = id.match(/^(.+?)-(\d+(?:\.\d+)?)$/);
+      if (m && m[1] === family) {
+        const dist = Math.abs(parseFloat(m[2]) - version);
+        if (dist < bestDist) { bestDist = dist; best = id; }
+      }
+    }
+    if (best) return best;
   }
   return null;
 }
