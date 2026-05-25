@@ -13,6 +13,7 @@
   "bugs": {
     "url": "https://github.com/compute-finance/mcp/issues"
   },
+  "mcpName": "io.github.compute-finance/mcp",
   "keywords": [
     "mcp",
     "mcp-server",
