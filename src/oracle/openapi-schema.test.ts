@@ -265,7 +265,8 @@ describe("applyMcpExtras", () => {
     const result = applyMcpExtras("data_get_price", schema);
     const props = result.properties as Record<string, Record<string, unknown>>;
     assert.equal(props.model.type, "string");
-    assert.equal(props.model.description, "Model name, e.g. claude-sonnet-4.6");
+    assert.equal(props.model.description, "Model name");
+    assert.deepEqual(props.model.examples, ["claude-sonnet-4.6"]);
   });
 });
 
