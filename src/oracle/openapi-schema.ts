@@ -93,7 +93,7 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
   data_get_price: {
     type: "object",
     properties: {
-      model: { type: "string", description: "Model name, e.g. claude-sonnet-4.6" },
+      model: { type: "string", description: "Model name", examples: ["claude-sonnet-4.6"] },
     },
     required: ["model"],
   },
@@ -106,6 +106,7 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
       limit: {
         type: "number",
         description: "Max events to return (most recent first). Defaults to all.",
+        examples: [5],
       },
     },
   },
@@ -287,12 +288,14 @@ const MCP_EXTRA_PROPERTIES: Record<string, Record<string, Record<string, unknown
     limit: {
       type: "number",
       description: "Max events to return (most recent first). Defaults to all.",
+      examples: [5],
     },
   },
   data_get_price: {
     model: {
       type: "string",
-      description: "Model name, e.g. claude-sonnet-4.6",
+      description: "Model name",
+      examples: ["claude-sonnet-4.6"],
     },
   },
 };
