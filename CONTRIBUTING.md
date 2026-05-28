@@ -42,6 +42,10 @@ Tools follow a layered naming convention:
 
 All tools follow the `<layer>_<verb>` convention.
 
+## License
+
+By contributing you agree that your contributions are licensed under the [MIT License](LICENSE).
+
 ## Reporting issues
 
 Use GitHub Issues. For security vulnerabilities, see `SECURITY.md`.
