@@ -21,7 +21,9 @@ export interface SessionRecord {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   output_tokens: number;
-  turns: number;
+  prompts: number;
+  // Null on pre-split rows; aggregates handle null gracefully.
+  inferences: number | null;
   tool_calls: number;
   edits: number;
   reads: number;
@@ -38,6 +40,22 @@ export function logSession(rec: Omit<SessionRecord, "ts">): SessionRecord {
   return full;
 }
 
+// Lift pre-rename rows (legacy `turns` was prompt-count) into the current schema.
+export function migrateLegacyRow(
+  raw: Record<string, unknown>,
+): SessionRecord {
+  const { turns, ...rest } = raw;
+  const prompts =
+    typeof rest.prompts === "number"
+      ? rest.prompts
+      : typeof turns === "number"
+        ? turns
+        : 0;
+  const inferences =
+    typeof rest.inferences === "number" ? rest.inferences : null;
+  return { ...rest, prompts, inferences } as unknown as SessionRecord;
+}
+
 export function readHistoryRaw(): SessionRecord[] {
   if (!existsSync(SESSIONS)) return [];
   const lines = readFileSync(SESSIONS, "utf8").split("\n").filter(Boolean);
@@ -47,7 +65,7 @@ export function readHistoryRaw(): SessionRecord[] {
   const out: SessionRecord[] = [];
   for (const l of lines) {
     try {
-      out.push(JSON.parse(l) as SessionRecord);
+      out.push(migrateLegacyRow(JSON.parse(l) as Record<string, unknown>));
     } catch {
       /* skip */
     }

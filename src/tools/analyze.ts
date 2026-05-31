@@ -7,15 +7,21 @@ import {
 import {
   findSessionFile,
   findLatestSessionFile,
-  parseSessionUsage,
-} from "../storage/session.js";
+  parseTranscript,
+} from "../storage/transcript.js";
+import { parseSessionUsage } from "../storage/session.js";
 import { logSession, getStats } from "../storage/history.js";
-import { parseTurns, logTurns } from "../storage/turns.js";
+import {
+  analyzeInferences,
+  logInferences,
+} from "../storage/inferences.js";
 import { classifyProfile } from "../storage/profile.js";
 import { round } from "../render/format.js";
 import { checkOptionalSessionId, optionalString } from "./validation.js";
 
-function resolveSessionArgs(a: Record<string, unknown>): string | null | { error: string } {
+function resolveSessionArgs(
+  a: Record<string, unknown>,
+): string | null | { error: string } {
   const sidCheck = checkOptionalSessionId(a.session_id);
   if (sidCheck && typeof sidCheck === "object") return sidCheck;
   const cwdCheck = optionalString(a.cwd, "cwd");
@@ -90,7 +96,8 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
     cache_read_tokens: usage.cache_read_tokens,
     cache_creation_tokens: usage.cache_creation_tokens,
     output_tokens: usage.output_tokens,
-    turns: usage.turns,
+    prompts: usage.prompts,
+    inferences: usage.inferences,
     tool_calls: usage.tool_calls,
     edits: usage.edits,
     reads: usage.reads,
@@ -113,7 +120,8 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
       cache_read_tokens: usage.cache_read_tokens,
       cache_creation_tokens: usage.cache_creation_tokens,
       output_tokens: usage.output_tokens,
-      turns: usage.turns,
+      prompts: usage.prompts,
+      inferences: usage.inferences,
       tool_calls: usage.tool_calls,
       edits: usage.edits,
       reads: usage.reads,
@@ -126,45 +134,46 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   };
 }
 
-export async function rawAnalyzeTurns(a: Record<string, unknown>) {
+export async function rawAnalyzeInferences(a: Record<string, unknown>) {
   const pathOrError = resolveSessionArgs(a);
   if (typeof pathOrError === "object" && pathOrError !== null) return pathOrError;
   const path = pathOrError as string;
 
-  const result = parseTurns(path);
+  const transcript = parseTranscript(path);
+  const result = analyzeInferences(transcript);
   const basket = await getBasketPrices();
   const normalized = resolveCanonicalIn(result.model, basket);
   const price = normalized
     ? (basket.find((p) => p.model === normalized) ?? null)
     : null;
-  const turnsWithCost = result.turns.map((t) => {
+  const inferencesWithCost = result.inferences.map((inf) => {
     let effective_usd: number | null = null;
     let nominal_usd: number | null = null;
     if (price) {
       const eff = effectiveCost(
         price,
-        t.raw_input_tokens,
-        t.cache_read_tokens,
-        t.cache_creation_tokens,
-        t.output_tokens,
+        inf.raw_input_tokens,
+        inf.cache_read_tokens,
+        inf.cache_creation_tokens,
+        inf.output_tokens,
       );
       effective_usd = round(eff.effective_usd, 6);
       nominal_usd = round(eff.nominal_usd, 6);
     }
-    return { ...t, effective_usd, nominal_usd };
+    return { ...inf, effective_usd, nominal_usd };
   });
 
-  logTurns(result.turns);
+  logInferences(result.inferences);
 
   return {
     session_id: result.session_id,
     model: result.model,
     model_normalized: normalized,
-    total_turns: result.total_turns,
+    total_inferences: result.total_inferences,
     totals: result.totals,
     by_tool: result.by_tool,
     cache_hit_ratio: round(result.cache_hit_ratio, 3),
-    turns: turnsWithCost,
+    inferences: inferencesWithCost,
     source: "api.compute.finance/v1/oracle/basket + local transcript",
   };
 }

@@ -60,7 +60,7 @@ Tools follow a layered naming convention:
 | Data (live oracle) | `data_get_*` | `data_get_basket`, `data_get_price` |
 | Compute | `compute_*` | `compute_estimate`, `compute_compare` |
 | Render (skill-facing) | `render_*` | `render_session_report` |
-| Raw analysis | `analyze_*` | `analyze_session`, `analyze_turns` |
+| Raw analysis | `analyze_*` | `analyze_session`, `analyze_inferences` |
 | History | `telemetry_get_*` | `telemetry_get_history` |
 
 All tools follow the `<layer>_<verb>` convention.

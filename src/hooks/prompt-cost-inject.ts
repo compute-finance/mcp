@@ -9,7 +9,7 @@
  * Guards:
  *   1. Rate limit — at most once per 10 minutes per session.
  *   2. Minimum cost — only fires when session cost exceeds $1.
- *   3. Minimum turns — skips short sessions (< 5 turns).
+ *   3. Minimum prompts — skips short sessions (< 5 user prompts).
  *
  * On any failure (oracle down, transcript missing, parse error) the
  * script exits silently with empty JSON — never blocks the user.
@@ -36,7 +36,7 @@ const DIR = join(homedir(), ".compute-finance");
 const STATE_FILE = join(DIR, "hook-state.json");
 const RATE_LIMIT_MS = 10 * 60 * 1000; // 10 minutes
 const MIN_COST_USD = 1.0; // $1.0
-const MIN_TURNS = 5; // 5 turns
+const MIN_PROMPTS = 5; // 5 user prompts
 
 // ── Stdin ───────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ try {
   process.exit(0);
 }
 
-if (usage.turns < MIN_TURNS) process.exit(0);
+if (usage.prompts < MIN_PROMPTS) process.exit(0);
 
 // ── Compute cost ────────────────────────────────────────────────────
 
@@ -118,7 +118,6 @@ if (cost < MIN_COST_USD) process.exit(0);
 
 // ── Fire ────────────────────────────────────────────────────────────
 
-// Update per-session rate limit state
 mkdirSync(DIR, { recursive: true });
 let stateObj: Record<string, unknown> = {};
 try {
@@ -132,10 +131,8 @@ if (!stateObj.sessions || typeof stateObj.sessions !== "object") {
 (stateObj.sessions as Record<string, number>)[rateLimitKey] = Date.now();
 writeFileSync(STATE_FILE, JSON.stringify(stateObj));
 
-// UserPromptSubmit output — additionalContext goes into Claude's context.
-// A unique nonce prevents Claude from repeating the cost line on subsequent
-// turns where the hook was rate-limited (old additionalContext stays in
-// conversation history — the nonce lets Claude distinguish stale from fresh).
+// Nonce flags fresh-vs-stale: prevents Claude from repeating the cost line on
+// rate-limited prompts where old additionalContext lingers in history.
 const nonce = Date.now().toString(36);
 const usd = `$${round(cost, 2).toFixed(2)}`;
 const totalTokens = usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens + usage.output_tokens;

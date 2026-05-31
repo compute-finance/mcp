@@ -1,7 +1,6 @@
 export function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !isFinite(n)) return "—";
-  // Sub-dollar amounts keep 4 decimals — meaningful for per-turn / subscription
-  // tier where every cent matters. ≥$1 rounds to cents.
+  // Sub-dollar amounts keep 4 decimals — per-inference costs need cent precision.
   if (Math.abs(n) < 1) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }

@@ -26,12 +26,9 @@ export interface ProfileInput {
 }
 
 export function classifyProfile(u: ProfileInput): ProfileResult {
-  // out_in_ratio measures session SHAPE (reasoning-heavy detection), not cost.
-  // It deliberately uses settled context only — raw input the user sent plus
-  // cache reads of prior turns. cache_creation_tokens (this turn's growth
-  // being added to cache) is excluded so the ratio reflects "thinking output
-  // per known input", not "output per total billing input". For cost math
-  // see effectiveCost in oracle/client.ts which sums all three.
+  // out_in_ratio reflects session SHAPE, not cost: settled context only
+  // (raw_input + cache_read), excluding cache_creation. Cost math is separate —
+  // see effectiveCost in oracle/client.ts.
   const totalIn = u.raw_input_tokens + u.cache_read_tokens;
   const out_in_ratio = totalIn > 0 ? u.output_tokens / totalIn : 0;
   const editRatio = u.tool_calls > 0 ? u.edits / u.tool_calls : 0;

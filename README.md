@@ -80,15 +80,17 @@ npx . setup
 | Tool | Description |
 |------|-------------|
 | `render_session_report` | Pre-formatted session cost report — used by `/cf-session-management` |
-| `render_consumption_report` | Pre-formatted per-turn breakdown — used by `/cf-session-consumption` |
+| `render_consumption_report` | Pre-formatted per-inference breakdown — used by `/cf-session-consumption` |
 | `render_active_sessions` | Overview of recent sessions across projects — used by `/cf-active-sessions` |
+
+Reports surface three orthogonal counts: **prompts** (what you typed), **inferences** (assistant replies — tool-loop sessions produce several per prompt), and **tool calls** (`tool_use` blocks). The triplet is identical across all three reports for the same session.
 
 ### Analysis
 
 | Tool | Description |
 |------|-------------|
 | `analyze_session` | Raw JSON session analysis (for custom UI, not skills) |
-| `analyze_turns` | Raw JSON per-turn breakdown (for custom UI, not skills) |
+| `analyze_inferences` | Raw JSON per-inference breakdown (for custom UI, not skills) |
 
 ### History
 
@@ -102,7 +104,7 @@ The `setup` command installs a `UserPromptSubmit` hook into `~/.claude/settings.
 
 **Guards** — the hook fires only when all three conditions are met:
 - Session cost exceeds **$1**
-- Session has at least **5 turns**
+- Session has at least **5 user prompts**
 - At least **10 minutes** since the last fire (per session)
 
 On any failure (oracle down, transcript missing, parse error) the hook exits silently — it never blocks your prompt.
@@ -135,7 +137,7 @@ Remove the `UserPromptSubmit` entry from `~/.claude/settings.json`.
 
 ## Privacy
 
-All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance/v1/oracle/*`. Session logs (`sessions.jsonl`, `turns.jsonl`) are never uploaded.
+All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance/v1/oracle/*`. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl` — plus `turns.jsonl` as legacy fallback for installs upgraded from ≤0.2.x) are never uploaded.
 
 ## Links
 

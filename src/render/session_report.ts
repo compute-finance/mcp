@@ -88,7 +88,8 @@ export async function renderSessionReport(
     cache_read_tokens: usage.cache_read_tokens,
     cache_creation_tokens: usage.cache_creation_tokens,
     output_tokens: usage.output_tokens,
-    turns: usage.turns,
+    prompts: usage.prompts,
+    inferences: usage.inferences,
     tool_calls: usage.tool_calls,
     edits: usage.edits,
     reads: usage.reads,
@@ -131,7 +132,7 @@ export async function renderSessionReport(
     `  Input ${tokens(usage.raw_input_tokens)} raw · ${tokens(usage.cache_read_tokens)} cache-read · ${tokens(usage.cache_creation_tokens)} cache-create · ${tokens(usage.output_tokens)} output`,
   );
   L.push(
-    `  ${usage.turns} turns · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
+    `  ${usage.prompts} prompts · ${usage.inferences} inferences · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
   );
   L.push("");
   if (effective_usd !== null && nominal_usd !== null) {
@@ -196,7 +197,7 @@ function renderOracleUnreachable(
     `  Input ${tokens(usage.raw_input_tokens)} raw · ${tokens(usage.cache_read_tokens)} cache-read · ${tokens(usage.cache_creation_tokens)} cache-create · ${tokens(usage.output_tokens)} output`,
   );
   L.push(
-    `  ${usage.turns} turns · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
+    `  ${usage.prompts} prompts · ${usage.inferences} inferences · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
   );
   L.push("");
   L.push(`Profile: ${profile}`);
