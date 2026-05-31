@@ -25,7 +25,7 @@ transactions. Security concerns most likely to apply:
 
 - Dependency vulnerabilities (supply chain)
 - Unexpected data exposure via MCP tool responses
-- Local file access issues in transcript parsing (`mcp/src/storage/`)
+- Local file access issues in transcript parsing (`src/storage/`)
 
 ## Supported versions
 
