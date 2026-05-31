@@ -22,8 +22,7 @@ export interface SessionRecord {
   cache_creation_tokens: number;
   output_tokens: number;
   prompts: number;
-  // Null on pre-split rows; aggregates handle null gracefully.
-  inferences: number | null;
+  inferences: number;
   tool_calls: number;
   edits: number;
   reads: number;
@@ -40,32 +39,15 @@ export function logSession(rec: Omit<SessionRecord, "ts">): SessionRecord {
   return full;
 }
 
-// Lift pre-rename rows (legacy `turns` was prompt-count) into the current schema.
-export function migrateLegacyRow(
-  raw: Record<string, unknown>,
-): SessionRecord {
-  const { turns, ...rest } = raw;
-  const prompts =
-    typeof rest.prompts === "number"
-      ? rest.prompts
-      : typeof turns === "number"
-        ? turns
-        : 0;
-  const inferences =
-    typeof rest.inferences === "number" ? rest.inferences : null;
-  return { ...rest, prompts, inferences } as unknown as SessionRecord;
-}
-
 export function readHistoryRaw(): SessionRecord[] {
   if (!existsSync(SESSIONS)) return [];
   const lines = readFileSync(SESSIONS, "utf8").split("\n").filter(Boolean);
-  // Skip corrupt lines silently — matches per-line tolerance in the transcript
-  // parsers. Append-only log can tear on a crash mid-write; one bad line must
-  // not take out getStats / insights for the rest of the file.
+  // Skip corrupt lines silently. Append-only log can tear on crash mid-write;
+  // one bad line must not take out getStats for the rest of the file.
   const out: SessionRecord[] = [];
   for (const l of lines) {
     try {
-      out.push(migrateLegacyRow(JSON.parse(l) as Record<string, unknown>));
+      out.push(JSON.parse(l) as SessionRecord);
     } catch {
       /* skip */
     }

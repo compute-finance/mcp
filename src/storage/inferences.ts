@@ -8,19 +8,15 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { EDIT_TOOLS, READ_TOOLS, numberField } from "./tools.js";
+import { EDIT_TOOLS, READ_TOOLS } from "./tools.js";
 import { InferenceRecord, Transcript } from "./transcript.js";
 
 function storageDir(): string {
   return process.env.COMPUTE_FINANCE_DIR ?? join(homedir(), ".compute-finance");
 }
 
-function currentPath(): string {
+function persistedPath(): string {
   return join(storageDir(), "inferences.jsonl");
-}
-
-function legacyPath(): string {
-  return join(storageDir(), "turns.jsonl");
 }
 
 function ensureDir(): void {
@@ -139,44 +135,10 @@ export function analyzeInferences(t: Transcript): InferenceAnalysis {
   };
 }
 
-export function normalizePersistedRow(
-  raw: Record<string, unknown>,
-): LoggedInference {
-  const index = numberField(raw.inference_index ?? raw.turn_index);
-  return {
-    session_id: String(raw.session_id ?? ""),
-    ts: typeof raw.ts === "string" ? raw.ts : null,
-    index,
-    prompt_index:
-      typeof raw.prompt_index === "number" ? raw.prompt_index : null,
-    model: typeof raw.model === "string" ? raw.model : null,
-    raw_input_tokens: numberField(raw.raw_input_tokens),
-    cache_read_tokens: numberField(raw.cache_read_tokens),
-    cache_creation_tokens: numberField(raw.cache_creation_tokens),
-    output_tokens: numberField(raw.output_tokens),
-    thinking_blocks: numberField(raw.thinking_blocks),
-    text_blocks: numberField(raw.text_blocks),
-    tool_use_blocks: numberField(raw.tool_use_blocks),
-    tools_used: Array.isArray(raw.tools_used)
-      ? (raw.tools_used as unknown[]).filter(
-          (n): n is string => typeof n === "string",
-        )
-      : [],
-    duration_ms: typeof raw.duration_ms === "number" ? raw.duration_ms : null,
-    comment: typeof raw.comment === "string" ? raw.comment : "—",
-  };
-}
-
-function readPersistedRows(): { sourcePath: string; rows: string[] } {
-  // Fall back to legacy turns.jsonl once; next write migrates to inferences.jsonl.
-  const cur = currentPath();
-  const leg = legacyPath();
-  const sourcePath = existsSync(cur) ? cur : existsSync(leg) ? leg : cur;
-  if (!existsSync(sourcePath)) return { sourcePath, rows: [] };
-  const rows = readFileSync(sourcePath, "utf8")
-    .split("\n")
-    .filter(Boolean);
-  return { sourcePath, rows };
+function readPersistedRows(): string[] {
+  const path = persistedPath();
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8").split("\n").filter(Boolean);
 }
 
 export function logInferences(
@@ -188,9 +150,8 @@ export function logInferences(
     return { logged: 0, path: displayPath };
   }
   const sid = inferences[0].session_id;
-  const { rows } = readPersistedRows();
   const kept: string[] = [];
-  for (const line of rows) {
+  for (const line of readPersistedRows()) {
     let parsed: Record<string, unknown> | null = null;
     try {
       parsed = JSON.parse(line) as Record<string, unknown>;
@@ -198,11 +159,11 @@ export function logInferences(
       continue;
     }
     if (parsed.session_id === sid) continue;
-    kept.push(JSON.stringify(normalizePersistedRow(parsed)));
+    kept.push(line);
   }
   const fresh = inferences.map((inf) => JSON.stringify(inf));
   const body = [...kept, ...fresh].join("\n") + "\n";
-  const target = currentPath();
+  const target = persistedPath();
   const tmp = target + ".tmp";
   writeFileSync(tmp, body);
   renameSync(tmp, target);
