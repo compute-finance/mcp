@@ -21,7 +21,8 @@ export interface SessionRecord {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   output_tokens: number;
-  turns: number;
+  prompts: number;
+  inferences: number;
   tool_calls: number;
   edits: number;
   reads: number;
@@ -41,9 +42,8 @@ export function logSession(rec: Omit<SessionRecord, "ts">): SessionRecord {
 export function readHistoryRaw(): SessionRecord[] {
   if (!existsSync(SESSIONS)) return [];
   const lines = readFileSync(SESSIONS, "utf8").split("\n").filter(Boolean);
-  // Skip corrupt lines silently — matches per-line tolerance in the transcript
-  // parsers. Append-only log can tear on a crash mid-write; one bad line must
-  // not take out getStats / insights for the rest of the file.
+  // Skip corrupt lines silently. Append-only log can tear on crash mid-write;
+  // one bad line must not take out getStats for the rest of the file.
   const out: SessionRecord[] = [];
   for (const l of lines) {
     try {

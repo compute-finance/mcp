@@ -62,7 +62,7 @@ export async function renderActiveSessions(
   );
   L.push("");
   L.push(
-    `  ${pad("session", 12)} ${pad("model", 20)} ${pad("turns", 5, "r")} ${pad("in-tok", 8, "r")} ${pad("out-tok", 8, "r")} ${pad("effective", 10, "r")} ${pad("nominal", 10, "r")}  last-active`,
+    `  ${pad("session", 12)} ${pad("model", 20)} ${pad("prompts", 7, "r")} ${pad("infs", 5, "r")} ${pad("tools", 5, "r")} ${pad("in-tok", 8, "r")} ${pad("out-tok", 8, "r")} ${pad("effective", 10, "r")} ${pad("nominal", 10, "r")}  last-active`,
   );
 
   let totalEff = 0;
@@ -112,7 +112,7 @@ export async function renderActiveSessions(
     const modelShort = (normalized ?? usage.model ?? "—").slice(0, 20);
     const when = new Date(f.mtime).toISOString().replace("T", " ").slice(0, 16);
     L.push(
-      `  ${pad(shortId, 12)} ${pad(modelShort, 20)} ${pad(String(usage.turns), 5, "r")} ${pad(tokens(totalIn), 8, "r")} ${pad(tokens(usage.output_tokens), 8, "r")} ${pad(money(eff), 10, "r")} ${pad(money(nom), 10, "r")}  ${when}`,
+      `  ${pad(shortId, 12)} ${pad(modelShort, 20)} ${pad(String(usage.prompts), 7, "r")} ${pad(String(usage.inferences), 5, "r")} ${pad(String(usage.tool_calls), 5, "r")} ${pad(tokens(totalIn), 8, "r")} ${pad(tokens(usage.output_tokens), 8, "r")} ${pad(money(eff), 10, "r")} ${pad(money(nom), 10, "r")}  ${when}`,
     );
   }
 

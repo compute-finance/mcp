@@ -7,8 +7,14 @@ import { ModelPrice } from "../oracle/types.js";
 import {
   findSessionFile,
   findLatestSessionFile,
-} from "../storage/session.js";
-import { parseTurns, logTurns, TurnRecord } from "../storage/turns.js";
+  parseTranscript,
+} from "../storage/transcript.js";
+import { summarizeSession } from "../storage/session.js";
+import {
+  analyzeInferences,
+  logInferences,
+  LoggedInference,
+} from "../storage/inferences.js";
 import { bar, money, tokens, pad, line, round, duration } from "./format.js";
 
 export interface ConsumptionReportArgs {
@@ -17,7 +23,7 @@ export interface ConsumptionReportArgs {
   full?: boolean;
 }
 
-interface TurnWithCost extends TurnRecord {
+interface InferenceWithCost extends LoggedInference {
   effective_usd: number | null;
   nominal_usd: number | null;
   total_tokens: number;
@@ -31,7 +37,10 @@ export async function renderConsumptionReport(
     : findLatestSessionFile(args.cwd);
   if (!path) return "Compute Finance Oracle — no session transcript found.";
 
-  const analysis = parseTurns(path);
+  const transcript = parseTranscript(path);
+  const analysis = analyzeInferences(transcript);
+  const summary = summarizeSession(transcript);
+
   let basket: ModelPrice[];
   try {
     basket = await getBasketPrices();
@@ -43,30 +52,29 @@ export async function renderConsumptionReport(
     ? (basket.find((p) => p.model === normalized) ?? null)
     : null;
 
-  const enriched: TurnWithCost[] = analysis.turns.map((t) => {
+  const enriched: InferenceWithCost[] = analysis.inferences.map((inf) => {
     const total =
-      t.raw_input_tokens +
-      t.cache_read_tokens +
-      t.cache_creation_tokens +
-      t.output_tokens;
+      inf.raw_input_tokens +
+      inf.cache_read_tokens +
+      inf.cache_creation_tokens +
+      inf.output_tokens;
     let effective_usd: number | null = null;
     let nominal_usd: number | null = null;
     if (price) {
       const eff = effectiveCost(
         price,
-        t.raw_input_tokens,
-        t.cache_read_tokens,
-        t.cache_creation_tokens,
-        t.output_tokens,
+        inf.raw_input_tokens,
+        inf.cache_read_tokens,
+        inf.cache_creation_tokens,
+        inf.output_tokens,
       );
       effective_usd = round(eff.effective_usd, 4);
       nominal_usd = round(eff.nominal_usd, 4);
     }
-    return { ...t, effective_usd, nominal_usd, total_tokens: total };
+    return { ...inf, effective_usd, nominal_usd, total_tokens: total };
   });
 
-  // Persist raw per-turn records (without cost — cost is derivable at read time).
-  const logRes = logTurns(analysis.turns);
+  const logRes = logInferences(analysis.inferences);
 
   const totalEff = enriched.reduce((a, t) => a + (t.effective_usd ?? 0), 0);
   const totalNom = enriched.reduce((a, t) => a + (t.nominal_usd ?? 0), 0);
@@ -74,27 +82,25 @@ export async function renderConsumptionReport(
 
   const maxTot = enriched.reduce((m, t) => Math.max(m, t.total_tokens), 0);
 
-  let shown: TurnWithCost[];
+  let shown: InferenceWithCost[];
   let heading: string;
   if (!args.full && enriched.length > 20) {
     const topByCost = [...enriched]
       .sort((a, b) => (b.effective_usd ?? 0) - (a.effective_usd ?? 0))
       .slice(0, 10);
     const last5 = enriched.slice(-5);
-    // Dedupe — a last-5 turn might also be top-by-cost.
-    const seen = new Set(topByCost.map((t) => t.turn_index));
-    const filtLast = last5.filter((t) => !seen.has(t.turn_index));
+    const seen = new Set(topByCost.map((t) => t.index));
+    const filtLast = last5.filter((t) => !seen.has(t.index));
     shown = [...topByCost, ...filtLast];
-    heading = `Per-turn (top 10 by cost · last 5 — ${analysis.total_turns} total, pass full=true for all):`;
+    heading = `Per-inference (top 10 by cost · last 5 — ${analysis.total_inferences} total, pass full=true for all):`;
   } else {
     shown = enriched;
     heading =
       enriched.length === 1
-        ? "Per-turn (1 turn):"
-        : `Per-turn (${enriched.length} turns):`;
+        ? "Per-inference (1 inference):"
+        : `Per-inference (${enriched.length} inferences):`;
   }
 
-  // by_tool — top 6 by calls
   const toolEntries = Object.entries(analysis.by_tool)
     .sort((a, b) => b[1].calls - a[1].calls)
     .slice(0, 6);
@@ -105,7 +111,12 @@ export async function renderConsumptionReport(
   L.push("");
   L.push(
     line(
-      `Session: ${analysis.session_id}  ·  Model: ${normalized ?? analysis.model ?? "unknown"}${normalized ? "" : "  (off-basket)"}  ·  Turns: ${analysis.total_turns}  ·  Cache hit: ${(analysis.cache_hit_ratio * 100).toFixed(1)}%`,
+      `Session: ${analysis.session_id}  ·  Model: ${normalized ?? analysis.model ?? "unknown"}${normalized ? "" : "  (off-basket)"}`,
+    ),
+  );
+  L.push(
+    line(
+      `Prompts: ${summary.prompts}  ·  Inferences: ${summary.inferences}  ·  Tool calls: ${summary.tool_calls}  ·  Cache hit: ${(analysis.cache_hit_ratio * 100).toFixed(1)}%`,
     ),
   );
   L.push("");
@@ -115,16 +126,16 @@ export async function renderConsumptionReport(
     );
   } else {
     L.push(
-      "Total: off-basket model — per-turn cost columns suppressed, token counts shown.",
+      "Total: off-basket model — per-inference cost columns suppressed, token counts shown.",
     );
   }
   L.push("");
 
   if (toolEntries.length) {
-    L.push("Tokens by tool (calls × turns featuring it):");
+    L.push("Tokens by tool (calls × inferences featuring it):");
     for (const [name, v] of toolEntries) {
       L.push(
-        `  ${pad(name, 12)} ${pad(String(v.calls), 4, "r")} calls in ${v.turns_with_tool} turns`,
+        `  ${pad(name, 12)} ${pad(String(v.calls), 4, "r")} calls in ${v.inferences_with_tool} inferences`,
       );
     }
     L.push("");
@@ -140,13 +151,12 @@ export async function renderConsumptionReport(
         ? `[${[...new Set(t.tools_used)].slice(0, 5).join(", ")}${t.tools_used.length > 5 ? "…" : ""}]`
         : "[—]";
     L.push(
-      `  T${pad(String(t.turn_index), 3, "r")} ${bar(t.total_tokens, maxTot)} ${pad(tokens(t.total_tokens), 6, "r")}tok  ${pad(cost, 7, "r")}  ${pad(dur, 7, "r")}  ${toolsTxt}`,
+      `  I${pad(String(t.index), 3, "r")} ${bar(t.total_tokens, maxTot)} ${pad(tokens(t.total_tokens), 6, "r")}tok  ${pad(cost, 7, "r")}  ${pad(dur, 7, "r")}  ${toolsTxt}`,
     );
     L.push(`         ${t.comment}`);
   }
   L.push("");
 
-  // Mechanical facts
   if (enriched.length && price) {
     const sortedCost = [...enriched].sort(
       (a, b) => (b.effective_usd ?? 0) - (a.effective_usd ?? 0),
@@ -164,26 +174,26 @@ export async function renderConsumptionReport(
 
     L.push("Mechanical facts:");
     L.push(
-      `  Most expensive turn:  T${most.turn_index}  ${money(most.effective_usd)}   comment: "${most.comment}"`,
+      `  Most expensive inference:  I${most.index}  ${money(most.effective_usd)}   comment: "${most.comment}"`,
     );
     L.push(
-      `  Cheapest turn:        T${cheap.turn_index}  ${money(cheap.effective_usd)}   comment: "${cheap.comment}"`,
+      `  Cheapest inference:        I${cheap.index}  ${money(cheap.effective_usd)}   comment: "${cheap.comment}"`,
     );
     if (warm) {
       const ratio =
         warm.cache_read_tokens / (warm.raw_input_tokens + warm.cache_read_tokens);
       L.push(
-        `  Warmest cache turn:   T${warm.turn_index}  ${(ratio * 100).toFixed(1)}% cache reads   (input ≥10k tokens)`,
+        `  Warmest cache inference:   I${warm.index}  ${(ratio * 100).toFixed(1)}% cache reads   (input ≥10k tokens)`,
       );
     }
     if (mostTool) {
       L.push(
-        `  Most-called tool:     ${mostTool[0]}  ${mostTool[1].calls} calls across ${mostTool[1].turns_with_tool} turns`,
+        `  Most-called tool:          ${mostTool[0]}  ${mostTool[1].calls} calls across ${mostTool[1].inferences_with_tool} inferences`,
       );
     }
     L.push("");
   }
 
-  L.push(`${logRes.logged} turns logged to ${logRes.path}`);
+  L.push(`${logRes.logged} inferences logged to ${logRes.path}`);
   return L.join("\n");
 }

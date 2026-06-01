@@ -48,7 +48,7 @@ import {
   optionalPositiveNumber,
 } from "./tools/validation.js";
 import { text, errorText, textWithContext, isErrorResult } from "./tools/response.js";
-import { rawAnalyzeSession, rawAnalyzeTurns, getHistory } from "./tools/analyze.js";
+import { rawAnalyzeSession, rawAnalyzeInferences, getHistory } from "./tools/analyze.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -216,8 +216,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (isErrorResult(result)) return errorText(result.error);
         return text(result);
       }
-      case "analyze_turns": {
-        const result = await rawAnalyzeTurns(a);
+      case "analyze_inferences": {
+        const result = await rawAnalyzeInferences(a);
         if (isErrorResult(result)) return errorText(result.error);
         return text(result);
       }

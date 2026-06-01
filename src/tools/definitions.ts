@@ -113,7 +113,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "render_session_report",
     description:
-      "Pre-formatted session cost report for cf-session-management skill. Source: local Claude Code transcript + Oracle API. Reads the transcript, prices it, logs to history, returns a `text` string. Print verbatim — do not reformat or interpret. Omit session_id for the most recent session.",
+      "Pre-formatted session cost report for cf-session-management skill. Source: local Claude Code transcript + Oracle API. Reads the transcript, prices it, logs to history, returns a `text` string. Header carries the canonical Prompts · Inferences · Tool calls triplet (user prompts, assistant replies, tool_use blocks — three distinct counters). Print verbatim — do not reformat or interpret. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -126,7 +126,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "render_consumption_report",
     description:
-      "Pre-formatted per-turn breakdown for cf-session-consumption skill. Source: local Claude Code transcript + Oracle API. Bar chart, tool aggregates, mechanical facts. Print the `text` field verbatim. Pass full=true to show every turn instead of top-10/last-5.",
+      "Pre-formatted per-inference breakdown for cf-session-consumption skill. Source: local Claude Code transcript + Oracle API. Bar chart, tool aggregates, mechanical facts; one row per assistant reply (Innn). Header carries the canonical Prompts · Inferences · Tool calls triplet — same numbers as render_session_report and render_active_sessions. Print the `text` field verbatim. Pass full=true to show every inference instead of top-10/last-5.",
     inputSchema: {
       type: "object",
       properties: {
@@ -135,7 +135,7 @@ export const toolDefinitions: ToolDef[] = [
         full: {
           type: "boolean",
           description:
-            "If true, show every turn (no top-10/last-5 truncation). Default false.",
+            "If true, show every inference (no top-10/last-5 truncation). Default false.",
         },
       },
     },
@@ -144,7 +144,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "render_active_sessions",
     description:
-      "Pre-formatted table of recent Claude Code sessions across all projects — per-session tokens and effective/nominal cost. Source: local Claude Code transcripts + Oracle API. Print the `text` field verbatim. Defaults to last 24h, top 10.",
+      "Pre-formatted table of recent Claude Code sessions across all projects — per-session Prompts · Inferences · Tool calls, tokens, and effective/nominal cost. Source: local Claude Code transcripts + Oracle API. Print the `text` field verbatim. Defaults to last 24h, top 10.",
     inputSchema: {
       type: "object",
       properties: {
@@ -165,7 +165,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "analyze_session",
     description:
-      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
+      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -176,9 +176,9 @@ export const toolDefinitions: ToolDef[] = [
     annotations: RENDER,
   },
   {
-    name: "analyze_turns",
+    name: "analyze_inferences",
     description:
-      "Raw JSON per-turn breakdown — token counts, tool usage, effective/nominal cost, cache hit ratio, duration per turn. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_consumption_report. Omit session_id for the most recent session.",
+      "Raw JSON per-inference breakdown — token counts, tool usage, effective/nominal cost, cache hit ratio, duration per inference. One row per assistant reply. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_consumption_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {

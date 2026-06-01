@@ -1,4 +1,4 @@
-// Tool classification shared by session + turn parsers. Currently Claude Code-
+// Tool classification shared by the transcript parser. Currently Claude Code-
 // flavored; adapters for other hosts should extend, not fork.
 export const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit", "MultiEdit"]);
 export const READ_TOOLS = new Set(["Read", "Grep", "Glob", "WebFetch"]);
@@ -20,8 +20,8 @@ export function isValidSessionId(id: string): boolean {
 }
 
 // A user-type record with a tool_result payload is a tool-use reply, NOT a
-// human turn. Counting it inflates turn counts 2-5× on heavy tool sessions.
-export function isHumanUserTurn(rec: any): boolean {
+// human prompt. Counting it inflates prompt counts 2-5× on heavy tool sessions.
+export function isHumanPrompt(rec: any): boolean {
   if (rec?.type !== "user") return false;
   if (rec.toolUseResult !== undefined) return false;
   const content = rec.message?.content;
@@ -30,4 +30,9 @@ export function isHumanUserTurn(rec: any): boolean {
     if (content.every((b: any) => b?.type === "tool_result")) return false;
   }
   return true;
+}
+
+// Defaults to 0 — keeps NaN/Infinity from leaking into token sums and cost math.
+export function numberField(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }

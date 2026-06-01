@@ -43,7 +43,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test src/oracle/openapi-schema.test.ts src/oracle/field-map.test.ts src/oracle/client.test.ts src/tools/response.test.ts src/tools/validation.test.ts src/smoke.test.ts",
+    "test": "tsx --test src",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
