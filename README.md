@@ -137,7 +137,7 @@ Remove the `UserPromptSubmit` entry from `~/.claude/settings.json`.
 
 ## Privacy
 
-All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance/v1/oracle/*`. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl` — plus `turns.jsonl` as legacy fallback for installs upgraded from ≤0.2.x) are never uploaded.
+All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance/v1/oracle/*`. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl`) are never uploaded.
 
 ## Links
 
