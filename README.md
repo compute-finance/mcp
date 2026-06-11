@@ -55,7 +55,7 @@ npx . setup
 
 ## Tools
 
-14 tools across five layers — no API key required. All tools are read-only.
+15 tools across five layers — no API key required. All tools are read-only.
 
 ### Data (live oracle)
 
@@ -67,6 +67,7 @@ npx . setup
 | `data_get_cpi` | Full Compute Price Index — basket with SCU breakdown, version, raw/marked-up prices |
 | `data_get_tiers` | Tier weights (frontier, standard, lightweight) and per-tier averages |
 | `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
+| `data_get_methodology` | Methodology changelog — every version with its formula summary and spec link, plus the version in force |
 
 ### Compute
 

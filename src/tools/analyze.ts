@@ -1,5 +1,6 @@
 import {
   getBasketPrices,
+  getActiveMethodologyVersion,
   costUsd,
   effectiveCost,
   resolveCanonicalIn,
@@ -40,7 +41,10 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   const path = pathOrError as string;
 
   const usage = parseSessionUsage(path);
-  const basket = await getBasketPrices();
+  const [basket, methodologyVersion] = await Promise.all([
+    getBasketPrices(),
+    getActiveMethodologyVersion(),
+  ]);
   const normalized = resolveCanonicalIn(usage.model, basket);
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
@@ -130,6 +134,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
     current_model_cost: current,
     counterfactual_nominal: counterfactual,
     profile: prof,
+    methodology_version: methodologyVersion,
     source: "api.compute.finance/v1/oracle/basket + local transcript",
   };
 }

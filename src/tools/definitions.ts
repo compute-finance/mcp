@@ -54,7 +54,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_scu",
     description:
-      "Current Standard Compute Unit (SCU) — a single number representing the market price of AI compute, calculated as a weighted average across the basket. Source: Oracle API. Returns SCU in USD, basket version, and tier breakdown.",
+      "Current Standard Compute Unit (SCU) — a single number representing the market price of AI compute, computed per the active oracle methodology (the response carries methodologyVersion; see data_get_methodology for the formula in force). Source: Oracle API.",
     inputSchema: FALLBACK_SCHEMAS.data_get_scu,
     annotations: ORACLE,
   },
@@ -77,6 +77,13 @@ export const toolDefinitions: ToolDef[] = [
     description:
       "Historical basket changes — model swaps with date, basket version, models added/removed, SCU before/after. Source: Oracle API. Sorted most recent first. Use the optional limit parameter to cap results.",
     inputSchema: FALLBACK_SCHEMAS.data_get_reconstitutions,
+    annotations: ORACLE,
+  },
+  {
+    name: "data_get_methodology",
+    description:
+      "Methodology changelog — every registered methodology version with its formula summary, family rule, reference workload, and spec reference, plus activeVersion (the version in force now). Source: Oracle API. Use to interpret SCU values and to pin integrations to a methodology version.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_methodology,
     annotations: ORACLE,
   },
 

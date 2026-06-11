@@ -1,5 +1,6 @@
 import {
   getBasketPrices,
+  getActiveMethodologyVersion,
   effectiveCost,
   costUsd,
   resolveCanonicalIn,
@@ -56,6 +57,7 @@ export async function renderSessionReport(
   }
 
   const normalized = resolveCanonicalIn(usage.model, basket);
+  const methodologyVersion = await getActiveMethodologyVersion();
 
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
@@ -119,7 +121,11 @@ export async function renderSessionReport(
 
   const L: string[] = [];
   L.push("Compute Finance Oracle — Session analysis");
-  L.push("Source: api.compute.finance/v1/oracle/basket + local transcript (measured)");
+  L.push(
+    `Source: api.compute.finance/v1/oracle/basket + local transcript (measured)${
+      methodologyVersion === null ? "" : ` · oracle methodology v${methodologyVersion}`
+    }`,
+  );
   L.push("");
   L.push(
     line(

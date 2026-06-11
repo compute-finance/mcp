@@ -7,6 +7,7 @@ import {
   getCpi,
   getTiers,
   getReconstitutions,
+  getMethodology,
   costUsd,
 } from "./oracle/client.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
@@ -122,6 +123,25 @@ describe("smoke: data_get_reconstitutions", () => {
     const fm = getFieldMap().recon;
     const entries = data[fm.entries_array];
     assert.ok(Array.isArray(entries), `expected array at key '${fm.entries_array}'`);
+  });
+});
+
+describe("smoke: data_get_methodology", () => {
+  it("returns the changelog with an active version and catalog entries", { timeout: 10_000 }, async () => {
+    const data = await getMethodology() as Record<string, unknown>;
+    assert.equal(typeof data.activeVersion, "number");
+    assert.ok((data.activeVersion as number) >= 1, "activeVersion must be >= 1");
+
+    const entries = data.entries;
+    assert.ok(Array.isArray(entries), "entries must be an array");
+    assert.ok(entries.length > 0, "entries must not be empty");
+
+    const first = entries[0] as Record<string, unknown>;
+    assert.equal(typeof first.version, "number");
+    assert.equal(typeof first.title, "string");
+    assert.equal(typeof first.formulaSummary, "string");
+    assert.ok((first.formulaSummary as string).length > 0, "formulaSummary must be non-empty");
+    assert.ok(!("strategyKey" in first), "internal strategyKey must not leak to the wire");
   });
 });
 

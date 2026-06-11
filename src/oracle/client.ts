@@ -21,6 +21,7 @@ let pricingCache: CacheEntry<unknown> | null = null;
 let scuCache: CacheEntry<unknown> | null = null;
 let tiersCache: CacheEntry<unknown> | null = null;
 let reconstitutionsCache: CacheEntry<unknown> | null = null;
+let methodologyCache: CacheEntry<unknown> | null = null;
 // Composed basket cache: avoid re-running mergeCache for every model on every
 // call when the underlying CPI + pricing caches are warm. getBasketPrices()
 // is called multiple times per render invocation.
@@ -88,6 +89,24 @@ export async function getReconstitutions(): Promise<unknown> {
   const data = await fetchJson("/v1/oracle/reconstitutions");
   reconstitutionsCache = { data, fetchedAt: Date.now() };
   return data;
+}
+
+export async function getMethodology(): Promise<unknown> {
+  if (methodologyCache && Date.now() - methodologyCache.fetchedAt < CACHE_TTL_MS) {
+    return methodologyCache.data;
+  }
+  const data = await fetchJson("/v1/oracle/methodology");
+  methodologyCache = { data, fetchedAt: Date.now() };
+  return data;
+}
+
+export async function getActiveMethodologyVersion(): Promise<number | null> {
+  try {
+    const data = (await getMethodology()) as Record<string, unknown>;
+    return typeof data.activeVersion === "number" ? data.activeVersion : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Typed internal helpers ──────────────────────────────────────────

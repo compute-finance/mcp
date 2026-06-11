@@ -25,6 +25,8 @@ import {
   getCpi,
   getTiers,
   getReconstitutions,
+  getMethodology,
+  getActiveMethodologyVersion,
   costUsd,
 } from "./oracle/client.js";
 import {
@@ -117,6 +119,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return textWithContext(await getCpi());
       case "data_get_tiers":
         return textWithContext(await getTiers());
+      case "data_get_methodology":
+        return textWithContext(await getMethodology());
       case "data_get_reconstitutions": {
         const limit = optionalPositiveNumber(a.limit, "limit");
         if (typeof limit === "object" && limit !== null) return errorText(limit.error);
@@ -157,7 +161,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const basket = await getBasketPrices();
+        const [basket, methodologyVersion] = await Promise.all([
+          getBasketPrices(),
+          getActiveMethodologyVersion(),
+        ]);
         const ranked = basket
           .map((p) => ({
             model: p.model,
@@ -175,6 +182,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             standard: ranked.filter((r) => r.tier === "standard"),
             lightweight: ranked.filter((r) => r.tier === "lightweight"),
           },
+          methodology_version: methodologyVersion,
           source: "api.compute.finance/v1/oracle/basket",
         });
       }
