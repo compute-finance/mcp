@@ -1,5 +1,4 @@
 import {
-  CACHE_FALLBACKS_BY_PROVIDER,
   CacheMultipliers,
   DEFAULT_CACHE_FALLBACK,
   ModelPrice,
@@ -117,11 +116,9 @@ function inputOutput(obj: unknown): { input: number; output: number } {
 }
 
 function mergeCache(
-  providerKey: string,
   oracleBlock: OracleCacheBlock | undefined,
 ): CacheMultipliers {
-  const fallback =
-    CACHE_FALLBACKS_BY_PROVIDER[providerKey] ?? DEFAULT_CACHE_FALLBACK;
+  const fallback = DEFAULT_CACHE_FALLBACK;
   if (!oracleBlock) return { ...fallback, source: "local-fallback" };
   const readFromOracle = oracleBlock.readMultiplier !== undefined;
   const writeShorthandFromOracle = oracleBlock.writeMultiplier !== undefined;
@@ -153,7 +150,7 @@ function mergeCache(
 // Build the canonical basket from /v1/oracle/basket. CPI is the source of truth
 // for which models exist and what tier/provider they belong to. /v1/oracle/pricing is
 // queried in parallel only to surface any per-model `cache` block the oracle
-// publishes — falls back to provider-keyed defaults when absent.
+// publishes — falls back to a neutral 1.0× default when absent.
 //
 // The composed array is itself cached for CACHE_TTL_MS so the per-model
 // mergeCache() loop doesn't re-run on every call when the underlying caches
@@ -190,7 +187,7 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
       output_usd_per_million: markedUpUsd.output,
       input_wei_per_million: markedUpWei.input,
       output_wei_per_million: markedUpWei.output,
-      cache: mergeCache(providerKey, cacheBlock),
+      cache: mergeCache(cacheBlock),
     });
   }
   basketCache = { data: out, fetchedAt: Date.now() };

@@ -3,9 +3,9 @@
  * from /v1/oracle/pricing: pricingCacheBlock() → mergeCache() →
  * ModelPrice.cache → effectiveCost().
  *
- * The cache values below differ from the openai provider fallback (read 0.1),
+ * The cache values below differ from the neutral default fallback (read 1.0),
  * so a regression where mergeCache fails to read the oracle block would fall
- * back to {read:0.1, source:'local-fallback'} and fail these assertions.
+ * back to {read:1.0, source:'local-fallback'} and fail these assertions.
  *
  * Run with: npx tsx --test src/oracle/cache-block.test.ts
  */

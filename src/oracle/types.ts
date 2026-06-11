@@ -10,7 +10,7 @@ export interface CacheMultipliers {
   write_1h: number;
   // "oracle"          — every multiplier came from the oracle's cache block
   // "oracle-partial"  — oracle published some fields, others fell back locally
-  // "local-fallback"  — no oracle cache block; all values from provider table
+  // "local-fallback"  — no oracle cache block; values from the neutral default
   source: "oracle" | "oracle-partial" | "local-fallback";
 }
 
@@ -44,29 +44,10 @@ export interface OracleCacheBlock {
   writeMultiplier1h?: number;
 }
 
-// Provider-level cache multiplier fallbacks. This is the ONLY place provider
-// names are baked in. New provider added to the oracle = it inherits the
-// "default" entry until verified values are added here. Not per-model — a
-// provider's caching mechanism is a property of the provider.
-//
-// Verified against live docs on 2026-04-14:
-// - Anthropic: https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching
-//   reads 0.1× input · 5m writes 1.25× · 1h writes 2.0×
-// - OpenAI: https://developers.openai.com/api/docs/pricing (gpt-4.1/gpt-5 family)
-//   reads 0.1× input · no write premium
-// - Google/xAI: cache_*_tokens are not currently surfaced by Claude Code
-//   transcripts for these providers, so multipliers don't materially affect
-//   computed costs. Conservative default = 1.0× until verified.
-export const CACHE_FALLBACKS_BY_PROVIDER: Record<
-  string,
-  Omit<CacheMultipliers, "source">
-> = {
-  anthropic: { read: 0.1, write_5m: 1.25, write_1h: 2.0 },
-  openai: { read: 0.1, write_5m: 1.0, write_1h: 1.0 },
-  google: { read: 1.0, write_5m: 1.0, write_1h: 1.0 },
-  xai: { read: 1.0, write_5m: 1.0, write_1h: 1.0 },
-};
-
+// Cache multipliers come from the oracle's per-model `cache` block
+// (/v1/oracle/pricing). DEFAULT_CACHE_FALLBACK is the neutral safety net for a
+// model the oracle hasn't published multipliers for yet (unknown provider, or a
+// partial cache block) — 1.0× leaves cost unchanged rather than guessing.
 export const DEFAULT_CACHE_FALLBACK: Omit<CacheMultipliers, "source"> = {
   read: 1.0,
   write_5m: 1.0,
