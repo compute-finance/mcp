@@ -123,20 +123,20 @@ function mergeCache(
   const fallback =
     CACHE_FALLBACKS_BY_PROVIDER[providerKey] ?? DEFAULT_CACHE_FALLBACK;
   if (!oracleBlock) return { ...fallback, source: "local-fallback" };
-  const readFromOracle = oracleBlock.read_multiplier !== undefined;
-  const writeShorthandFromOracle = oracleBlock.write_multiplier !== undefined;
+  const readFromOracle = oracleBlock.readMultiplier !== undefined;
+  const writeShorthandFromOracle = oracleBlock.writeMultiplier !== undefined;
   const write5mFromOracle =
-    oracleBlock.write_multiplier_5m !== undefined || writeShorthandFromOracle;
+    oracleBlock.writeMultiplier5m !== undefined || writeShorthandFromOracle;
   const write1hFromOracle =
-    oracleBlock.write_multiplier_1h !== undefined || writeShorthandFromOracle;
-  const read = oracleBlock.read_multiplier ?? fallback.read;
+    oracleBlock.writeMultiplier1h !== undefined || writeShorthandFromOracle;
+  const read = oracleBlock.readMultiplier ?? fallback.read;
   const write_5m =
-    oracleBlock.write_multiplier_5m ??
-    oracleBlock.write_multiplier ??
+    oracleBlock.writeMultiplier5m ??
+    oracleBlock.writeMultiplier ??
     fallback.write_5m;
   const write_1h =
-    oracleBlock.write_multiplier_1h ??
-    oracleBlock.write_multiplier ??
+    oracleBlock.writeMultiplier1h ??
+    oracleBlock.writeMultiplier ??
     fallback.write_1h;
   const allFromOracle =
     readFromOracle && write5mFromOracle && write1hFromOracle;

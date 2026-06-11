@@ -38,10 +38,10 @@ export interface ModelPrice {
 // needs to inspect individual multiplier fields.
 
 export interface OracleCacheBlock {
-  read_multiplier?: number;
-  write_multiplier?: number;
-  write_multiplier_5m?: number;
-  write_multiplier_1h?: number;
+  readMultiplier?: number;
+  writeMultiplier?: number;
+  writeMultiplier5m?: number;
+  writeMultiplier1h?: number;
 }
 
 // Provider-level cache multiplier fallbacks. This is the ONLY place provider

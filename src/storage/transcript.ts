@@ -69,7 +69,7 @@ export function findLatestSessionFile(cwd?: string): string | null {
   let best: { path: string; mtime: number } | null = null;
   for (const d of dirs) {
     const full = join(root, d);
-    if (!existsSync(full)) continue;
+    if (!existsSync(full) || !statSync(full).isDirectory()) continue;
     for (const f of readdirSync(full)) {
       if (!f.endsWith(".jsonl")) continue;
       const p = join(full, f);
