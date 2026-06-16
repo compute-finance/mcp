@@ -28,7 +28,7 @@ function priceWithCache(cache: CachePricing | null): ModelPrice {
     display_name: "Claude Test 1.0",
     provider: "anthropic",
     provider_name: "Anthropic",
-    tier: "frontier",
+    family: "anthropic.claude",
     integrated: true,
     released_at: null,
     input_usd_per_million: 5,

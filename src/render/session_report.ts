@@ -22,20 +22,24 @@ export interface SessionReportArgs {
   cwd?: string;
 }
 
-function pickCheapestByTier(basket: ModelPrice[], tier: string): ModelPrice[] {
-  const filtered = basket.filter((p) => p.tier === tier);
-  const byProvider = new Map<string, ModelPrice>();
-  for (const p of filtered) {
-    const existing = byProvider.get(p.provider);
+function pickCheapestByFamily(basket: ModelPrice[]): ModelPrice[] {
+  const byFamily = new Map<string, ModelPrice>();
+  for (const p of basket) {
+    const key = p.family || `${p.provider}.${p.model}`;
+    const existing = byFamily.get(key);
     const cost = p.input_usd_per_million + p.output_usd_per_million;
     if (
       !existing ||
       cost < existing.input_usd_per_million + existing.output_usd_per_million
     ) {
-      byProvider.set(p.provider, p);
+      byFamily.set(key, p);
     }
   }
-  return Array.from(byProvider.values());
+  return Array.from(byFamily.values()).sort(
+    (a, b) =>
+      a.input_usd_per_million + a.output_usd_per_million -
+      (b.input_usd_per_million + b.output_usd_per_million),
+  );
 }
 
 export async function renderSessionReport(
@@ -110,19 +114,12 @@ export async function renderSessionReport(
 
   const stats = await getStats(basket);
 
-  const frontiers = pickCheapestByTier(basket, "frontier");
-  const standards = pickCheapestByTier(basket, "standard");
-  const lights = pickCheapestByTier(basket, "lightweight");
+  const counterfactual = pickCheapestByFamily(basket);
 
   // Strip `claude-` prefix so counterfactual rows stay tight (`opus-4.6` vs `claude-opus-4.6`).
   const shortName = (m: string) => m.replace(/^claude-/, "");
-  const fmtCounterfactual = (arr: ModelPrice[]) =>
-    arr
-      .map(
-        (p) =>
-          `${shortName(p.model)} ${money(round(costUsd(p, totalIn, usage.output_tokens), 4))}`,
-      )
-      .join("   ");
+  const fmtCounterfactualRow = (p: ModelPrice) =>
+    `${p.family.padEnd(22)} ${shortName(p.model)} ${money(round(costUsd(p, totalIn, usage.output_tokens), 4))}`;
 
   const L: string[] = [];
   L.push("Compute Finance Oracle — Session analysis");
@@ -165,10 +162,8 @@ export async function renderSessionReport(
     L.push("  Current model not tracked by oracle — effective cost unavailable.");
   }
   L.push("");
-  L.push("Same shape on alternatives (nominal, no cache):");
-  if (frontiers.length) L.push(`  Frontier    ${fmtCounterfactual(frontiers)}`);
-  if (standards.length) L.push(`  Standard    ${fmtCounterfactual(standards)}`);
-  if (lights.length) L.push(`  Lightweight ${fmtCounterfactual(lights)}`);
+  L.push("Same shape on alternatives (cheapest representative per family, nominal):");
+  for (const p of counterfactual) L.push(`  ${fmtCounterfactualRow(p)}`);
   L.push("");
   L.push(`Profile: ${profile}`);
 
@@ -222,3 +217,7 @@ function renderOracleUnreachable(
   L.push(`oracle unreachable — pricing skipped (${err.message}). Session NOT logged.`);
   return L.join("\n");
 }
+
+export const _internals = {
+  pickCheapestByFamily,
+};

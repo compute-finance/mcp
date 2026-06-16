@@ -87,32 +87,9 @@ export interface HistoryStats {
 }
 
 export interface Insight {
-  kind: "frontier_underused" | "cache_dominance";
+  kind: "cache_dominance";
   message: string;
   evidence: Record<string, unknown>;
-}
-
-// Pure data lookup — never add provider-specific branches here.
-function cheaperAlternative(
-  model: string,
-  basket: ModelPrice[],
-): ModelPrice | null {
-  const current = basket.find((p) => p.model === model);
-  if (!current) return null;
-  const candidates = basket.filter(
-    (p) =>
-      p.provider === current.provider &&
-      p.tier !== "frontier" &&
-      p.model !== current.model,
-  );
-  if (candidates.length === 0) return null;
-  // Cheapest by input+output combined (workload-neutral ranking).
-  return [...candidates].sort(
-    (a, b) =>
-      a.input_usd_per_million +
-      a.output_usd_per_million -
-      (b.input_usd_per_million + b.output_usd_per_million),
-  )[0];
 }
 
 function computeInsights(
@@ -121,61 +98,6 @@ function computeInsights(
 ): Insight[] {
   const out: Insight[] = [];
   if (recs.length < 5) return out;
-
-  const frontierSet = new Set(
-    basket.filter((p) => p.tier === "frontier").map((p) => p.model),
-  );
-
-  const underused = recs.filter(
-    (r) =>
-      r.model &&
-      frontierSet.has(r.model) &&
-      (r.profile === "edit-heavy" || r.profile === "research-heavy") &&
-      !r.extended_thinking_used,
-  );
-  if (underused.length >= 3) {
-    let totalSaved = 0;
-    const altsSeen = new Set<string>();
-    for (const r of underused) {
-      const alt = cheaperAlternative(r.model!, basket);
-      const current = basket.find((p) => p.model === r.model);
-      if (!alt || !current) continue;
-      altsSeen.add(alt.model);
-      const currentPriced = priceSession(
-        current,
-        r.raw_input_tokens,
-        r.cache_read_tokens,
-        r.cache_creation_tokens,
-        r.output_tokens,
-      );
-      const altPriced = priceSession(
-        alt,
-        r.raw_input_tokens,
-        r.cache_read_tokens,
-        r.cache_creation_tokens,
-        r.output_tokens,
-      );
-      if (!currentPriced.effective || !altPriced.effective) continue;
-      totalSaved += Math.max(
-        0,
-        currentPriced.effective.effective_usd - altPriced.effective.effective_usd,
-      );
-    }
-    if (totalSaved > 0) {
-      const altList = Array.from(altsSeen).join(", ");
-      out.push({
-        kind: "frontier_underused",
-        message: `${underused.length} of your last ${recs.length} sessions were edit- or research-heavy on a frontier model without extended thinking. Same-provider standard tier (${altList}) would have saved ~$${totalSaved.toFixed(2)} cumulative at current oracle prices.`,
-        evidence: {
-          sample: recs.length,
-          matches: underused.length,
-          models_seen: Array.from(new Set(underused.map((r) => r.model))),
-          alternatives: Array.from(altsSeen),
-          est_cumulative_savings_usd: Math.round(totalSaved * 100) / 100,
-        },
-      });
-    }
-  }
 
   const withCache = recs.filter(
     (r) => r.raw_input_tokens + r.cache_read_tokens > 0,

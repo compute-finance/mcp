@@ -9,7 +9,7 @@ function mp(model: string): ModelPrice {
     display_name: model,
     provider: "test",
     provider_name: "Test",
-    tier: "frontier",
+    family: "test.family",
     integrated: true,
     released_at: null,
     input_usd_per_million: 1,

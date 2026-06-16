@@ -78,17 +78,13 @@ const TOOL_TO_OPERATION: Record<string, string> = {
   data_get_basket: "OraclePublicController_getBasket",
   data_get_price: "OraclePublicController_getModel",
   data_get_scu: "OraclePublicController_getScu",
+  data_get_breakdown: "OraclePublicController_getScu",
   data_get_cpi: "OraclePublicController_getBasket",
-  data_get_tiers: "OraclePublicController_getTiers",
   data_get_reconstitutions: "OraclePublicController_getReconstitutions",
   data_get_methodology: "MethodologyPublicController_getChangelog",
 };
 
-// ── Hardcoded fallbacks ──────────────────────────────────────────────
-//
-// Used when the OpenAPI spec is unreachable. These are the schemas that
-// were previously inline in index.ts — frozen as a safety net.
-
+// Used when the OpenAPI spec is unreachable; frozen as a safety net.
 export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
   data_get_basket: { type: "object", properties: {} },
   data_get_price: {
@@ -99,8 +95,8 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
     required: ["model"],
   },
   data_get_scu: { type: "object", properties: {} },
+  data_get_breakdown: { type: "object", properties: {} },
   data_get_cpi: { type: "object", properties: {} },
-  data_get_tiers: { type: "object", properties: {} },
   data_get_methodology: { type: "object", properties: {} },
   data_get_reconstitutions: {
     type: "object",

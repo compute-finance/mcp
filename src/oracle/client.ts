@@ -4,7 +4,6 @@ import {
   ModelPrice,
   OracleCacheBlock,
   OracleCacheComponentWire,
-  Tier,
 } from "./types.js";
 import { getFieldMap } from "./field-map.js";
 
@@ -18,10 +17,10 @@ interface CacheEntry<T> {
 const CACHE_TTL_MS = 60_000;
 let cpiCache: CacheEntry<unknown> | null = null;
 let scuCache: CacheEntry<unknown> | null = null;
-let tiersCache: CacheEntry<unknown> | null = null;
 let reconstitutionsCache: CacheEntry<unknown> | null = null;
 let methodologyCache: CacheEntry<unknown> | null = null;
 let basketCache: CacheEntry<ModelPrice[]> | null = null;
+const familyDriftWarned = new Set<string>();
 // WeakMap, not Map: the canonical-id Set is GC'd with its basket array — no leak across refreshes.
 const idsByBasket = new WeakMap<ModelPrice[], Set<string>>();
 
@@ -51,13 +50,9 @@ export async function getScu(): Promise<unknown> {
   return data;
 }
 
-export async function getTiers(): Promise<unknown> {
-  if (tiersCache && Date.now() - tiersCache.fetchedAt < CACHE_TTL_MS) {
-    return tiersCache.data;
-  }
-  const data = await fetchJson("/v1/oracle/tiers");
-  tiersCache = { data, fetchedAt: Date.now() };
-  return data;
+export async function getBreakdown(): Promise<unknown> {
+  const scu = (await getScu()) as Record<string, unknown> | null;
+  return scu && typeof scu === "object" ? scu.breakdown ?? null : null;
 }
 
 export async function getReconstitutions(): Promise<unknown> {
@@ -180,12 +175,19 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
     const markedUpUsd = inputOutput(m[fm.marked_up_usd_price]);
     const markedUpWei = inputOutput(m[fm.marked_up_wei_price]);
     const rawCache = (m.cache ?? null) as OracleCacheBlock | null;
+    const family = m[fm.family] as string | undefined;
+    if (!family && !familyDriftWarned.has(id)) {
+      familyDriftWarned.add(id);
+      process.stderr.write(
+        `[oracle] basket model ${id} missing required family field — upstream schema drift\n`,
+      );
+    }
     out.push({
       model: id,
       display_name: (m[fm.display_name] as string) ?? id,
       provider: providerKey,
       provider_name: providerName,
-      tier: (m[fm.tier] as Tier) ?? "standard",
+      family: family ?? "",
       integrated: (m[fm.integrated] as boolean) ?? false,
       released_at: (m[fm.released_at] as string | null) ?? null,
       input_usd_per_million: markedUpUsd.input,
@@ -391,8 +393,6 @@ export function priceSession(
     return { nominal_usd, effective: null, cache_pricing_missing: err };
   }
 }
-
-export type { Tier };
 
 export const _internals = {
   adaptComponent,

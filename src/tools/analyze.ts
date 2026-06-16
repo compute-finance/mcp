@@ -58,7 +58,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
     .map((p) => ({
       model: p.model,
       provider: p.provider,
-      tier: p.tier,
+      family: p.family,
       usd_cost: round(costUsd(p, totalIn, usage.output_tokens), 6),
     }))
     .sort((x, y) => x.usd_cost - y.usd_cost);
