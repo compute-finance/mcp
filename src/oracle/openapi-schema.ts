@@ -81,6 +81,7 @@ const TOOL_TO_OPERATION: Record<string, string> = {
   data_get_cpi: "OraclePublicController_getBasket",
   data_get_tiers: "OraclePublicController_getTiers",
   data_get_reconstitutions: "OraclePublicController_getReconstitutions",
+  data_get_methodology: "MethodologyPublicController_getChangelog",
 };
 
 // ── Hardcoded fallbacks ──────────────────────────────────────────────
@@ -100,6 +101,7 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
   data_get_scu: { type: "object", properties: {} },
   data_get_cpi: { type: "object", properties: {} },
   data_get_tiers: { type: "object", properties: {} },
+  data_get_methodology: { type: "object", properties: {} },
   data_get_reconstitutions: {
     type: "object",
     properties: {
