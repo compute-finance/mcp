@@ -49,16 +49,25 @@ describe("smoke: data_get_basket", () => {
       `tier must be a known value, got: ${first.tier}`);
   });
 
-  it("every model has cache multipliers with valid source", { timeout: 10_000 }, async () => {
+  it("every model has an oracle-published cache block with structured per-component attribution", { timeout: 10_000 }, async () => {
     const models = await getBasketPrices();
     for (const m of models) {
-      assert.ok(m.cache, `${m.model} missing cache`);
-      assert.equal(typeof m.cache.read, "number", `${m.model} cache.read not a number`);
-      assert.equal(typeof m.cache.write_5m, "number", `${m.model} cache.write_5m not a number`);
-      assert.ok(
-        ["oracle", "oracle-partial", "local-fallback"].includes(m.cache.source),
-        `${m.model} cache.source unexpected: ${m.cache.source}`,
-      );
+      assert.ok(m.cache, `${m.model}: oracle has not published a cache block`);
+      const components = [
+        ["cachedInput", m.cache.cachedInput] as const,
+        ["cacheWrite5m", m.cache.cacheWrite5m] as const,
+        ["cacheWrite1h", m.cache.cacheWrite1h] as const,
+      ];
+      const hasAny = components.some(([, c]) => c !== null);
+      assert.ok(hasAny, `${m.model}: cache block has no components published`);
+      for (const [name, c] of components) {
+        if (c === null) continue;
+        assert.equal(typeof c.usdPerMillion, "number", `${m.model}.${name}.usdPerMillion not a number`);
+        assert.ok(c.usdPerMillion >= 0, `${m.model}.${name}.usdPerMillion negative`);
+        assert.equal(typeof c.ratioOfInput, "number", `${m.model}.${name}.ratioOfInput not a number`);
+        assert.equal(typeof c.source, "string", `${m.model}.${name}.source not a string`);
+        assert.ok(c.source.length > 0, `${m.model}.${name}.source empty`);
+      }
     }
   });
 });

@@ -1,16 +1,8 @@
-/**
- * Unit tests for resolveCanonicalIn (and its internal canonicalizeIn).
- *
- * Run with: npx tsx --test src/oracle/client.test.ts
- */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { resolveCanonicalIn } from "./client.js";
 import type { ModelPrice } from "./types.js";
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
-/** Minimal ModelPrice stub — only `model` matters for canonicalization. */
 function mp(model: string): ModelPrice {
   return {
     model,
@@ -24,11 +16,9 @@ function mp(model: string): ModelPrice {
     output_usd_per_million: 1,
     input_wei_per_million: 1,
     output_wei_per_million: 1,
-    cache: { read: 0.1, write_5m: 1.25, write_1h: 1.25, source: "local-fallback" },
+    cache: null,
   };
 }
-
-// ── Tests ───────────────────────────────────────────────────────────
 
 describe("resolveCanonicalIn", () => {
   const basket = [
@@ -38,8 +28,6 @@ describe("resolveCanonicalIn", () => {
     mp("gemini-3.1-pro"),
   ];
 
-  // --- null / undefined input ---
-
   it("returns null for null input", () => {
     assert.equal(resolveCanonicalIn(null, basket), null);
   });
@@ -48,13 +36,9 @@ describe("resolveCanonicalIn", () => {
     assert.equal(resolveCanonicalIn(undefined, basket), null);
   });
 
-  // --- exact match ---
-
   it("returns exact match when model is in basket", () => {
     assert.equal(resolveCanonicalIn("claude-opus-4.7", basket), "claude-opus-4.7");
   });
-
-  // --- bracket stripping ---
 
   it("strips trailing bracket annotations", () => {
     assert.equal(
@@ -63,16 +47,12 @@ describe("resolveCanonicalIn", () => {
     );
   });
 
-  // --- date suffix stripping ---
-
   it("strips trailing date suffixes (8+ digits)", () => {
     assert.equal(
       resolveCanonicalIn("claude-opus-4.7-20250501", basket),
       "claude-opus-4.7",
     );
   });
-
-  // --- dot normalization (digit-hyphen-digit → digit.digit) ---
 
   it("normalizes digit-hyphen-digit to digit.digit", () => {
     assert.equal(resolveCanonicalIn("claude-opus-4-7", basket), "claude-opus-4.7");
@@ -81,8 +61,6 @@ describe("resolveCanonicalIn", () => {
   it("normalizes gpt model with hyphen version", () => {
     assert.equal(resolveCanonicalIn("gpt-5-4", basket), "gpt-5.4");
   });
-
-  // --- family fallback: closest version ---
 
   it("falls back to closest version in same family", () => {
     // claude-opus-4.6 not in basket, but claude-opus-4.7 is
@@ -113,8 +91,6 @@ describe("resolveCanonicalIn", () => {
     assert.equal(resolveCanonicalIn("claude-opus-4-6", basket), "claude-opus-4.7");
   });
 
-  // --- no match at all ---
-
   it("returns null when no family matches", () => {
     assert.equal(resolveCanonicalIn("llama-4-maverick", basket), null);
   });
@@ -122,8 +98,6 @@ describe("resolveCanonicalIn", () => {
   it("returns null for completely unrelated model name", () => {
     assert.equal(resolveCanonicalIn("deepseek-r2", basket), null);
   });
-
-  // --- empty basket ---
 
   it("returns null with empty basket", () => {
     assert.equal(resolveCanonicalIn("claude-opus-4.7", []), null);

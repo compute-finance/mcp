@@ -1,19 +1,3 @@
-/**
- * UserPromptSubmit hook — injects session cost into Claude's context.
- *
- * Invoked via `npx @compute-finance/mcp hook-prompt`.
- * Claude Code pipes hook context JSON to stdin; this script writes
- * a JSON response to stdout with `additionalContext` that Claude sees
- * before formulating its response.
- *
- * Guards:
- *   1. Rate limit — at most once per 10 minutes per session.
- *   2. Minimum cost — only fires when session cost exceeds $1.
- *   3. Minimum prompts — skips short sessions (< 5 user prompts).
- *
- * On any failure (oracle down, transcript missing, parse error) the
- * script exits silently with empty JSON — never blocks the user.
- */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -24,21 +8,17 @@ import {
 } from "../storage/session.js";
 import {
   getBasketPrices,
-  effectiveCost,
+  priceSession,
   resolveCanonicalIn,
 } from "../oracle/client.js";
 import { initFieldMap } from "../oracle/field-map.js";
 import { round } from "../render/format.js";
 
-// ── Config ──────────────────────────────────────────────────────────
-
 const DIR = join(homedir(), ".compute-finance");
 const STATE_FILE = join(DIR, "hook-state.json");
-const RATE_LIMIT_MS = 10 * 60 * 1000; // 10 minutes
-const MIN_COST_USD = 1.0; // $1.0
-const MIN_PROMPTS = 5; // 5 user prompts
-
-// ── Stdin ───────────────────────────────────────────────────────────
+const RATE_LIMIT_MS = 10 * 60 * 1000;
+const MIN_COST_USD = 1.0;
+const MIN_PROMPTS = 5;
 
 let stdin = "";
 process.stdin.setEncoding("utf8");
@@ -47,16 +27,10 @@ for await (const chunk of process.stdin) stdin += chunk;
 let context: Record<string, unknown> = {};
 try {
   context = JSON.parse(stdin);
-} catch {
-  // Malformed or empty stdin — proceed without context
-}
-
-// ── Session ID ─────────────────────────────────────────────────────
+} catch { /* malformed stdin — proceed without context */ }
 
 const sessionId: string | undefined =
   typeof context.session_id === "string" ? context.session_id : undefined;
-
-// ── Rate limit (per session) ───────────────────────────────────────
 
 const rateLimitKey = sessionId ?? "default";
 try {
@@ -69,11 +43,7 @@ try {
       }
     }
   }
-} catch {
-  // Corrupt state file — proceed (will overwrite)
-}
-
-// ── Find session transcript ─────────────────────────────────────────
+} catch { /* corrupt state file — proceed, will overwrite */ }
 
 const path = sessionId
   ? (findSessionFile(sessionId) ?? findLatestSessionFile())
@@ -90,8 +60,6 @@ try {
 
 if (usage.prompts < MIN_PROMPTS) process.exit(0);
 
-// ── Compute cost ────────────────────────────────────────────────────
-
 let cost = 0;
 try {
   await initFieldMap();
@@ -101,22 +69,21 @@ try {
     ? (basket.find((p) => p.model === normalized) ?? null)
     : null;
   if (price) {
-    cost = effectiveCost(
+    const r = priceSession(
       price,
       usage.raw_input_tokens,
       usage.cache_read_tokens,
       usage.cache_creation_tokens,
       usage.output_tokens,
-    ).effective_usd;
+    );
+    if (!r.effective) process.exit(0);
+    cost = r.effective.effective_usd;
   }
 } catch {
-  // Oracle unreachable — skip silently
   process.exit(0);
 }
 
 if (cost < MIN_COST_USD) process.exit(0);
-
-// ── Fire ────────────────────────────────────────────────────────────
 
 mkdirSync(DIR, { recursive: true });
 let stateObj: Record<string, unknown> = {};
@@ -131,8 +98,7 @@ if (!stateObj.sessions || typeof stateObj.sessions !== "object") {
 (stateObj.sessions as Record<string, number>)[rateLimitKey] = Date.now();
 writeFileSync(STATE_FILE, JSON.stringify(stateObj));
 
-// Nonce flags fresh-vs-stale: prevents Claude from repeating the cost line on
-// rate-limited prompts where old additionalContext lingers in history.
+// Nonce prevents Claude from repeating the cost line on rate-limited prompts where old additionalContext lingers in history.
 const nonce = Date.now().toString(36);
 const usd = `$${round(cost, 2).toFixed(2)}`;
 const totalTokens = usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens + usage.output_tokens;

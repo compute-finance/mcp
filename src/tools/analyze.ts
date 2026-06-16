@@ -2,7 +2,8 @@ import {
   getBasketPrices,
   getActiveMethodologyVersion,
   costUsd,
-  effectiveCost,
+  priceSession,
+  OracleCachePricingMissingError,
   resolveCanonicalIn,
 } from "../oracle/client.js";
 import {
@@ -19,6 +20,11 @@ import {
 import { classifyProfile } from "../storage/profile.js";
 import { round } from "../render/format.js";
 import { checkOptionalSessionId, optionalString } from "./validation.js";
+
+interface CacheMissing {
+  model: string;
+  missing: OracleCachePricingMissingError["missing"];
+}
 
 function resolveSessionArgs(
   a: Record<string, unknown>,
@@ -63,29 +69,46 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   if (normalized) {
     const price = basket.find((p) => p.model === normalized) ?? null;
     if (price) {
-      const eff = effectiveCost(
+      const r = priceSession(
         price,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
         usage.output_tokens,
       );
-      effective_usd = round(eff.effective_usd, 6);
-      nominal_usd = round(eff.nominal_usd, 6);
-      current = {
-        model: normalized,
-        effective_usd,
-        nominal_usd,
-        savings_from_cache_usd: round(eff.nominal_usd - eff.effective_usd, 6),
-        breakdown: {
-          raw_input_usd: round(eff.breakdown.raw_input_usd, 6),
-          cache_read_usd: round(eff.breakdown.cache_read_usd, 6),
-          cache_create_usd: round(eff.breakdown.cache_create_usd, 6),
-          output_usd: round(eff.breakdown.output_usd, 6),
-        },
-        cache_source: eff.cache_source,
-        notes: eff.notes,
-      };
+      nominal_usd = round(r.nominal_usd, 6);
+      if (r.effective) {
+        effective_usd = round(r.effective.effective_usd, 6);
+        current = {
+          model: normalized,
+          effective_usd,
+          nominal_usd,
+          savings_from_cache_usd: round(r.effective.nominal_usd - r.effective.effective_usd, 6),
+          breakdown: {
+            raw_input_usd: round(r.effective.breakdown.raw_input_usd, 6),
+            cache_read_usd: round(r.effective.breakdown.cache_read_usd, 6),
+            cache_create_usd: round(r.effective.breakdown.cache_create_usd, 6),
+            output_usd: round(r.effective.breakdown.output_usd, 6),
+          },
+          cache_attribution: r.effective.cache_attribution,
+          notes: r.effective.notes,
+        };
+      } else if (r.cache_pricing_missing) {
+        current = {
+          model: normalized,
+          effective_usd: null,
+          nominal_usd,
+          savings_from_cache_usd: null,
+          breakdown: null,
+          cache_attribution: price.cache,
+          error: {
+            type: "oracle_cache_pricing_missing",
+            model: r.cache_pricing_missing.model,
+            missing: r.cache_pricing_missing.missing,
+            message: r.cache_pricing_missing.message,
+          },
+        };
+      }
     }
   }
 
@@ -154,18 +177,26 @@ export async function rawAnalyzeInferences(a: Record<string, unknown>) {
   const inferencesWithCost = result.inferences.map((inf) => {
     let effective_usd: number | null = null;
     let nominal_usd: number | null = null;
+    let cache_pricing_missing: CacheMissing | null = null;
     if (price) {
-      const eff = effectiveCost(
+      const r = priceSession(
         price,
         inf.raw_input_tokens,
         inf.cache_read_tokens,
         inf.cache_creation_tokens,
         inf.output_tokens,
       );
-      effective_usd = round(eff.effective_usd, 6);
-      nominal_usd = round(eff.nominal_usd, 6);
+      nominal_usd = round(r.nominal_usd, 6);
+      if (r.effective) {
+        effective_usd = round(r.effective.effective_usd, 6);
+      } else if (r.cache_pricing_missing) {
+        cache_pricing_missing = {
+          model: r.cache_pricing_missing.model,
+          missing: r.cache_pricing_missing.missing,
+        };
+      }
     }
-    return { ...inf, effective_usd, nominal_usd };
+    return { ...inf, effective_usd, nominal_usd, cache_pricing_missing };
   });
 
   logInferences(result.inferences);

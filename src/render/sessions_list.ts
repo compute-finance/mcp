@@ -5,7 +5,7 @@ import { parseSessionUsage } from "../storage/session.js";
 import { encodeCwd } from "../storage/tools.js";
 import {
   getBasketPrices,
-  effectiveCost,
+  priceSession,
   resolveCanonicalIn,
 } from "../oracle/client.js";
 import { ModelPrice } from "../oracle/types.js";
@@ -17,7 +17,6 @@ export interface ActiveSessionsArgs {
   hours?: number;
 }
 
-// Locate session files across projects, optionally filtered to one cwd.
 function scanSessions(cwd?: string): { path: string; mtime: number }[] {
   const root = join(homedir(), ".claude", "projects");
   if (!existsSync(root)) return [];
@@ -67,10 +66,9 @@ export async function renderActiveSessions(
 
   let totalEff = 0;
   let totalNom = 0;
+  let cacheMissingSessions = 0;
 
-  // Fetch the basket once up front. Inside the loop we do a synchronous
-  // `basket.find()` — avoids N awaits for a cache that's already hot after the
-  // first call, and degrades cleanly to empty basket if the oracle is down.
+  // Single fetch up front; in-loop .find() reuses the hot cache (avoids N awaits, degrades to empty on oracle down).
   let basket: ModelPrice[];
   try {
     basket = await getBasketPrices();
@@ -92,17 +90,21 @@ export async function renderActiveSessions(
     let eff: number | null = null;
     let nom: number | null = null;
     if (price) {
-      const e = effectiveCost(
+      const r = priceSession(
         price,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
         usage.output_tokens,
       );
-      eff = round(e.effective_usd, 4);
-      nom = round(e.nominal_usd, 4);
-      totalEff += e.effective_usd;
-      totalNom += e.nominal_usd;
+      nom = round(r.nominal_usd, 4);
+      totalNom += r.nominal_usd;
+      if (r.effective) {
+        eff = round(r.effective.effective_usd, 4);
+        totalEff += r.effective.effective_usd;
+      } else {
+        cacheMissingSessions += 1;
+      }
     }
     const totalIn =
       usage.raw_input_tokens +
@@ -117,8 +119,14 @@ export async function renderActiveSessions(
   }
 
   L.push("");
-  L.push(
-    `Across ${files.length} sessions: ${money(round(totalEff, 4))} effective · ${money(round(totalNom, 4))} nominal · saved ${money(round(totalNom - totalEff, 4))} via cache`,
-  );
+  if (cacheMissingSessions === 0) {
+    L.push(
+      `Across ${files.length} sessions: ${money(round(totalEff, 4))} effective · ${money(round(totalNom, 4))} nominal · saved ${money(round(totalNom - totalEff, 4))} via cache`,
+    );
+  } else {
+    L.push(
+      `Across ${files.length} sessions: ${money(round(totalNom, 4))} nominal · effective unavailable for ${cacheMissingSessions} session(s) (oracle has not published cache pricing for the model)`,
+    );
+  }
   return L.join("\n");
 }

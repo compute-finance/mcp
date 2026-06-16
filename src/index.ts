@@ -103,7 +103,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "data_get_basket": {
         return textWithContext({
           models: await getBasketPrices(),
-          source: "api.compute.finance/v1/oracle/basket (+ /v1/oracle/pricing for cache multipliers when published)",
+          source: "api.compute.finance/v1/oracle/basket",
         });
       }
       case "data_get_price": {

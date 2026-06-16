@@ -61,13 +61,15 @@ npx . setup
 
 | Tool | Description |
 |------|-------------|
-| `data_get_basket` | All models with provider, tier, USD prices per million tokens, cache multipliers |
+| `data_get_basket` | All models with provider, tier, USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
 | `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) |
 | `data_get_scu` | Current Standard Compute Unit — the market benchmark price |
 | `data_get_cpi` | Full Compute Price Index — basket with SCU breakdown, version, raw/marked-up prices |
 | `data_get_tiers` | Tier weights (frontier, standard, lightweight) and per-tier averages |
 | `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
 | `data_get_methodology` | Methodology changelog — every version with its formula summary and spec link, plus the version in force |
+
+Cache pricing comes from the Compute Finance Oracle. Session and consumption reports show effective (cache-aware) cost when the oracle has published the relevant cache components; otherwise they show nominal cost (input rate applied to every input variant) and label effective as unavailable for that model.
 
 ### Compute
 

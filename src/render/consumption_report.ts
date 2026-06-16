@@ -1,6 +1,7 @@
 import {
   getBasketPrices,
-  effectiveCost,
+  priceSession,
+  OracleCachePricingMissingError,
   resolveCanonicalIn,
 } from "../oracle/client.js";
 import { ModelPrice } from "../oracle/types.js";
@@ -52,6 +53,10 @@ export async function renderConsumptionReport(
     ? (basket.find((p) => p.model === normalized) ?? null)
     : null;
 
+  const cacheState: {
+    missingCount: number;
+    first: OracleCachePricingMissingError | null;
+  } = { missingCount: 0, first: null };
   const enriched: InferenceWithCost[] = analysis.inferences.map((inf) => {
     const total =
       inf.raw_input_tokens +
@@ -61,15 +66,20 @@ export async function renderConsumptionReport(
     let effective_usd: number | null = null;
     let nominal_usd: number | null = null;
     if (price) {
-      const eff = effectiveCost(
+      const r = priceSession(
         price,
         inf.raw_input_tokens,
         inf.cache_read_tokens,
         inf.cache_creation_tokens,
         inf.output_tokens,
       );
-      effective_usd = round(eff.effective_usd, 4);
-      nominal_usd = round(eff.nominal_usd, 4);
+      nominal_usd = round(r.nominal_usd, 4);
+      if (r.effective) {
+        effective_usd = round(r.effective.effective_usd, 4);
+      } else if (r.cache_pricing_missing) {
+        cacheState.missingCount += 1;
+        if (cacheState.first === null) cacheState.first = r.cache_pricing_missing;
+      }
     }
     return { ...inf, effective_usd, nominal_usd, total_tokens: total };
   });
@@ -120,9 +130,13 @@ export async function renderConsumptionReport(
     ),
   );
   L.push("");
-  if (price) {
+  if (price && cacheState.missingCount === 0) {
     L.push(
       `Total: ${money(round(totalEff, 4))} effective  /  ${money(round(totalNom, 4))} nominal  ·  saved ${money(round(saved, 4))} via cache`,
+    );
+  } else if (price && cacheState.first !== null) {
+    L.push(
+      `Total: ${money(round(totalNom, 4))} nominal  ·  effective unavailable for ${cacheState.missingCount} inference(s) — oracle has not published ${cacheState.first.missing} pricing for ${cacheState.first.model}`,
     );
   } else {
     L.push(
@@ -158,8 +172,11 @@ export async function renderConsumptionReport(
   L.push("");
 
   if (enriched.length && price) {
+    const useNominal = cacheState.missingCount > 0;
+    const pickCost = (t: InferenceWithCost) =>
+      useNominal ? t.nominal_usd : t.effective_usd;
     const sortedCost = [...enriched].sort(
-      (a, b) => (b.effective_usd ?? 0) - (a.effective_usd ?? 0),
+      (a, b) => (pickCost(b) ?? 0) - (pickCost(a) ?? 0),
     );
     const most = sortedCost[0];
     const cheap = sortedCost[sortedCost.length - 1];
@@ -171,13 +188,14 @@ export async function renderConsumptionReport(
           a.cache_read_tokens / (a.raw_input_tokens + a.cache_read_tokens),
       )[0];
     const mostTool = toolEntries[0];
+    const costLabel = useNominal ? "nominal" : "effective";
 
     L.push("Mechanical facts:");
     L.push(
-      `  Most expensive inference:  I${most.index}  ${money(most.effective_usd)}   comment: "${most.comment}"`,
+      `  Most expensive inference (${costLabel}):  I${most.index}  ${money(pickCost(most))}   comment: "${most.comment}"`,
     );
     L.push(
-      `  Cheapest inference:        I${cheap.index}  ${money(cheap.effective_usd)}   comment: "${cheap.comment}"`,
+      `  Cheapest inference (${costLabel}):        I${cheap.index}  ${money(pickCost(cheap))}   comment: "${cheap.comment}"`,
     );
     if (warm) {
       const ratio =
