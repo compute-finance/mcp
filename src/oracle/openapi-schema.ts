@@ -86,6 +86,7 @@ const TOOL_TO_OPERATION: Record<string, string> = {
   data_get_model_price_history: "OraclePublicController_getModelPriceHistory",
   data_get_catalog: "OraclePublicController_getCatalog",
   data_get_model_price_at: "OraclePublicController_getModelPriceAt",
+  data_get_baseline: "OraclePublicController_getBaseline",
 };
 
 // Used when the OpenAPI spec is unreachable; frozen as a safety net.
@@ -171,6 +172,7 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
     required: ["model"],
   },
   data_get_catalog: { type: "object", properties: {} },
+  data_get_baseline: { type: "object", properties: {} },
   data_get_model_price_at: {
     type: "object",
     properties: {

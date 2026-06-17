@@ -129,6 +129,25 @@ export async function getModelPriceAt(
   );
 }
 
+let baselineCache: CacheEntry<unknown> | null = null;
+
+export async function getBaseline(): Promise<unknown> {
+  if (baselineCache && Date.now() - baselineCache.fetchedAt < CACHE_TTL_MS) {
+    return baselineCache.data;
+  }
+  const res = await fetch(`${API_BASE}/v1/oracle/baseline`);
+  if (res.status === 204) {
+    baselineCache = { data: null, fetchedAt: Date.now() };
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`Oracle /v1/oracle/baseline returned ${res.status}`);
+  }
+  const data = await res.json();
+  baselineCache = { data, fetchedAt: Date.now() };
+  return data;
+}
+
 export async function getActiveMethodologyVersion(): Promise<number | null> {
   try {
     const data = (await getMethodology()) as Record<string, unknown>;

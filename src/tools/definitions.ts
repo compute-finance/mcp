@@ -54,7 +54,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_scu",
     description:
-      "Current Standard Compute Unit (SCU) — value plus the methodology-versioned `breakdown` discriminated union listing every family representative with USD-per-million-token prices and blended cost. The response carries methodologyVersion; see data_get_methodology for the formula in force. For the breakdown alone, use data_get_breakdown. Source: Oracle API.",
+      "Current Standard Compute Unit (SCU) — value plus the methodology-versioned `breakdown` discriminated union listing every family representative with USD-per-million-token prices and blended cost. Also carries `computeIndex`: the inverse purchasing-power view (baseline / scuUsd) × 100, anchored at 100 at the first confirmed revision. The response carries methodologyVersion; see data_get_methodology for the formula in force. For the breakdown alone, use data_get_breakdown; for the baseline denominator, use data_get_baseline. Source: Oracle API.",
     inputSchema: FALLBACK_SCHEMAS.data_get_scu,
     annotations: ORACLE,
   },
@@ -112,6 +112,13 @@ export const toolDefinitions: ToolDef[] = [
     description:
       "Per-model input/output USD price effective at a specific timestamp. Source: Oracle API (/v1/oracle/models/{model}/price-at). Response is a discriminated union by source: 'manifest' when the model is the family representative in the revision active at that date (cross-links revisionVersion, methodologyVersion, metadataHash, family for verification), or 'providerCost' when only catalog pricing exists (step-function fallback). observedAt reflects when the price was recorded. Returns an error for malformed or future dates, untracked models, or dates preceding all available data.",
     inputSchema: FALLBACK_SCHEMAS.data_get_model_price_at,
+    annotations: ORACLE,
+  },
+  {
+    name: "data_get_baseline",
+    description:
+      "Frozen SCU denominator for the inverse computeIndex purchasing-power view: the SCU of the first confirmed revision (methodologyVersion 1), captured set-once and never changes. Source: Oracle API (/v1/oracle/baseline). The published computeIndex on /v1/oracle/scu, /v1/oracle/latest and each /v1/oracle/history point equals (baseline.scuUsd / point.scuUsd) × 100 — 100 at genesis, rises as compute gets cheaper. Returns null until the first revision is confirmed.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_baseline,
     annotations: ORACLE,
   },
 

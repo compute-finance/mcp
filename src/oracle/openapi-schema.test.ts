@@ -274,6 +274,7 @@ describe("isOracleBackedTool", () => {
     assert.ok(isOracleBackedTool("data_get_model_price_history"));
     assert.ok(isOracleBackedTool("data_get_catalog"));
     assert.ok(isOracleBackedTool("data_get_model_price_at"));
+    assert.ok(isOracleBackedTool("data_get_baseline"));
   });
 
   it("returns false for local tools", () => {
@@ -307,6 +308,18 @@ describe("FALLBACK_SCHEMAS — catalog surfaces", () => {
     assert.deepEqual(schema.required, ["model", "date"]);
     const props = schema.properties as Record<string, Record<string, unknown>>;
     assert.equal(props.date.type, "string");
+  });
+});
+
+describe("FALLBACK_SCHEMAS — baseline surface", () => {
+  it("ships an empty-object baseline fallback so agents can call it without any parameters", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_baseline as Record<string, unknown>;
+    assert.deepEqual(schema.properties, {});
+  });
+
+  it("does not declare any required parameters — Bug guarded: baseline is a singleton lookup, not a parameterized read", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_baseline as Record<string, unknown>;
+    assert.equal(schema.required, undefined);
   });
 });
 
