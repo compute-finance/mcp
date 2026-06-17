@@ -129,6 +129,16 @@ export async function getModelPriceAt(
   );
 }
 
+export async function getScuAt(date: string): Promise<unknown> {
+  const params = new URLSearchParams({ date });
+  const res = await fetch(`${API_BASE}/v1/oracle/scu-at?${params.toString()}`);
+  if (res.status === 204) return null;
+  if (!res.ok) {
+    throw new Error(`Oracle /v1/oracle/scu-at returned ${res.status}`);
+  }
+  return res.json();
+}
+
 let baselineCache: CacheEntry<unknown> | null = null;
 
 export async function getBaseline(): Promise<unknown> {

@@ -124,4 +124,22 @@ describe("toolDefinitions", () => {
         tool.description.includes("baseline / point.scuUsd"),
     );
   });
+
+  it("SHOULD include data_get_scu_at as an ORACLE-annotated read tool", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_scu_at");
+    assert.ok(tool, "data_get_scu_at missing");
+    assert.equal(tool.annotations?.readOnlyHint, true);
+    assert.equal(tool.annotations?.destructiveHint, false);
+    assert.equal(tool.annotations?.idempotentHint, true);
+  });
+
+  it("SHOULD describe data_get_scu_at with the step-function and tie-break semantics — Bug guarded: agents must not interpolate or pick the wrong revision on equal publishedAt", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_scu_at");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("step function"));
+    assert.ok(tool.description.includes("publishedAt"));
+    assert.ok(tool.description.includes("highest revisionVersion"));
+    assert.ok(tool.description.includes("methodologyVersion"));
+    assert.ok(tool.description.includes("metadataHash"));
+  });
 });

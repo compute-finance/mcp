@@ -121,6 +121,13 @@ export const toolDefinitions: ToolDef[] = [
     inputSchema: FALLBACK_SCHEMAS.data_get_baseline,
     annotations: ORACLE,
   },
+  {
+    name: "data_get_scu_at",
+    description:
+      "SCU value active at a specific timestamp via step function — no interpolation. Source: Oracle API (/v1/oracle/scu-at). Resolves the latest confirmed revision with publishedAt ≤ date and returns its scuUsd, scuUsd18, computeIndex, revisionVersion, methodologyVersion, publishedAt, and metadataHash. Monotonicity is non-strict — when two confirmed revisions share publishedAt the highest revisionVersion wins. computeIndex is derived as (baseline.scuUsd / scuUsd) × 100, the same formula as data_get_scu and each data_get_history point. Returns null when the date precedes the genesis revision; errors on malformed or future dates. Use data_get_history for a bucketed series; use data_get_scu_at for a single-point lookup.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_scu_at,
+    annotations: ORACLE,
+  },
 
   {
     name: "compute_estimate",
