@@ -57,3 +57,19 @@ export function optionalPositiveNumber(
     ? v
     : { error: `${name} must be a positive finite number if provided` };
 }
+
+const HISTORY_GRANULARITIES = ["per-revision", "daily", "weekly"] as const;
+export type HistoryGranularity = (typeof HISTORY_GRANULARITIES)[number];
+
+export function optionalHistoryGranularity(
+  v: unknown,
+  name: string,
+): HistoryGranularity | undefined | { error: string } {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string" || !(HISTORY_GRANULARITIES as readonly string[]).includes(v)) {
+    return {
+      error: `${name} must be one of ${HISTORY_GRANULARITIES.join(", ")} if provided`,
+    };
+  }
+  return v as HistoryGranularity;
+}

@@ -52,4 +52,30 @@ describe("toolDefinitions", () => {
       seen.add(name);
     }
   });
+
+  it("SHOULD include data_get_history and data_get_model_price_history as ORACLE-annotated read tools", () => {
+    for (const name of ["data_get_history", "data_get_model_price_history"]) {
+      const tool = toolDefinitions.find((t) => t.name === name);
+      assert.ok(tool, `${name} missing`);
+      assert.equal(tool.annotations?.readOnlyHint, true);
+      assert.equal(tool.annotations?.destructiveHint, false);
+      assert.equal(tool.annotations?.idempotentHint, true);
+    }
+  });
+
+  it("SHOULD describe data_get_history with the granularity and CSV-free wire — Bug guarded: agents must learn the granularity vocabulary before sending requests", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_history");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("per-revision"));
+    assert.ok(tool.description.includes("daily"));
+    assert.ok(tool.description.includes("weekly"));
+    assert.ok(tool.description.includes("scuUsd"));
+  });
+
+  it("SHOULD describe data_get_model_price_history with the model requirement and unavailableRevisions surface", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_price_history");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("unavailableRevisions"));
+    assert.ok(tool.description.includes("input/output"));
+  });
 });

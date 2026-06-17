@@ -86,6 +86,20 @@ export const toolDefinitions: ToolDef[] = [
     inputSchema: FALLBACK_SCHEMAS.data_get_methodology,
     annotations: ORACLE,
   },
+  {
+    name: "data_get_history",
+    description:
+      "SCU index time series — date-range history of Standard Compute Unit values with optional bucketing granularity. Source: Oracle API (/v1/oracle/history). Each point carries scuUsd, methodologyVersion, revisionVersion, metadataHash, and computeIndex when populated. per-revision emits one point per revision; daily and weekly buckets carry the last revision's value forward across empty buckets (step-function close). Defaults to per-revision over the full range. For a single point at a specific timestamp, fetch the individual revision via data_get_cpi.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_history,
+    annotations: ORACLE,
+  },
+  {
+    name: "data_get_model_price_history",
+    description:
+      "Per-model input/output USD price time series — date-range history for a single model that has appeared in at least one confirmed SCU basket. Source: Oracle API (/v1/oracle/models/{model}/price-history). Each point carries input/output USD per million tokens plus revisionVersion, methodologyVersion and metadataHash. Catchup revisions whose manifest is unavailable are surfaced in unavailableRevisions. Same granularity (per-revision/daily/weekly) and limit semantics as data_get_history. Models that have never appeared in any confirmed revision return an error.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_model_price_history,
+    annotations: ORACLE,
+  },
 
   {
     name: "compute_estimate",
