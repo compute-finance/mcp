@@ -31,6 +31,7 @@ import {
   getModelPriceHistory,
   getCatalog,
   getModelPriceAt,
+  getBaseline,
   costUsd,
 } from "./oracle/client.js";
 import {
@@ -184,6 +185,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof date !== "string") return errorText(date.error);
         return textWithContext(await getModelPriceAt(model, date));
       }
+      case "data_get_baseline":
+        return textWithContext(await getBaseline());
 
       case "compute_estimate": {
         const model = requireString(a.model, "model");

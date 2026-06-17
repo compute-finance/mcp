@@ -104,4 +104,24 @@ describe("toolDefinitions", () => {
     assert.ok(tool.description.includes("providerCost"));
     assert.ok(tool.description.includes("source"));
   });
+
+  it("SHOULD include data_get_baseline as an ORACLE-annotated read tool", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_baseline");
+    assert.ok(tool, "data_get_baseline missing");
+    assert.equal(tool.annotations?.readOnlyHint, true);
+    assert.equal(tool.annotations?.destructiveHint, false);
+    assert.equal(tool.annotations?.idempotentHint, true);
+  });
+
+  it("SHOULD describe data_get_baseline with the set-once invariant and computeIndex formula — Bug guarded: agents must understand baseline is frozen, never recomputed", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_baseline");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("set-once"));
+    assert.ok(tool.description.includes("computeIndex"));
+    assert.ok(tool.description.includes("first confirmed revision"));
+    assert.ok(
+      tool.description.includes("(baseline.scuUsd / point.scuUsd) × 100") ||
+        tool.description.includes("baseline / point.scuUsd"),
+    );
+  });
 });

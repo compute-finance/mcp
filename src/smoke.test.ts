@@ -12,6 +12,7 @@ import {
   getModelPriceHistory,
   getCatalog,
   getModelPriceAt,
+  getBaseline,
   costUsd,
 } from "./oracle/client.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
@@ -302,6 +303,24 @@ describe("smoke: data_get_model_price_at", () => {
     assert.equal(typeof data.inputPriceUsdPerMillion, "number");
     assert.equal(typeof data.outputPriceUsdPerMillion, "number");
     assert.equal(typeof data.observedAt, "string");
+  });
+});
+
+describe("smoke: data_get_baseline", () => {
+  it("returns the frozen genesis SCU snapshot and the published /v1/oracle/scu computeIndex equals (baseline/current) × 100", { timeout: 10_000 }, async () => {
+    const baseline = (await getBaseline()) as Record<string, unknown> | null;
+    assert.ok(baseline !== null, "baseline must be published on a synced oracle");
+    assert.equal(typeof baseline.date, "string");
+    assert.equal(typeof baseline.scuUsd, "number");
+    assert.ok((baseline.scuUsd as number) > 0, "baseline scuUsd must be positive");
+    assert.equal(baseline.methodologyVersion, 1);
+
+    const scu = (await getScu()) as Record<string, unknown>;
+    const currentScu = scu.scuUsd as number;
+    const computeIndex = scu.computeIndex as number | null;
+    assert.equal(typeof computeIndex, "number", "/v1/oracle/scu computeIndex must be populated once baseline lands");
+    const expected = ((baseline.scuUsd as number) / currentScu) * 100;
+    assert.ok(Math.abs((computeIndex as number) - expected) < 1e-6, "computeIndex must equal (baseline / current) × 100");
   });
 });
 
