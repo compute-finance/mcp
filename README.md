@@ -55,7 +55,7 @@ npx . setup
 
 ## Tools
 
-15 tools across five layers — no API key required. All tools are read-only.
+17 tools across five layers — no API key required. All tools are read-only.
 
 ### Data (live oracle)
 
@@ -68,6 +68,8 @@ npx . setup
 | `data_get_cpi` | Full Compute Price Index — basket with `scuUsd`, version, raw/marked-up prices |
 | `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
 | `data_get_methodology` | Methodology changelog — every version with its formula summary and spec link, plus the version in force |
+| `data_get_history` | SCU index time series over a date range — `per-revision`, `daily`, or `weekly` granularity; daily/weekly buckets carry the last revision's value forward across empty buckets |
+| `data_get_model_price_history` | Per-model input/output USD price time series for a model that has appeared in the SCU basket — same granularity semantics as `data_get_history`, with catchup gaps surfaced in `unavailableRevisions` |
 
 Cache pricing comes from the Compute Finance Oracle. Session and consumption reports show effective (cache-aware) cost when the oracle has published the relevant cache components; otherwise they show nominal cost (input rate applied to every input variant) and label effective as unavailable for that model.
 

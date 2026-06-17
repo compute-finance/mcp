@@ -76,6 +76,38 @@ export async function getMethodology(): Promise<unknown> {
   return data;
 }
 
+export type HistoryGranularity = "per-revision" | "daily" | "weekly";
+
+export interface HistoryQuery {
+  from?: string;
+  to?: string;
+  granularity?: HistoryGranularity;
+  limit?: number;
+}
+
+export function buildHistoryQueryString(query: HistoryQuery): string {
+  const params = new URLSearchParams();
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.granularity) params.set("granularity", query.granularity);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export async function getHistory(query: HistoryQuery = {}): Promise<unknown> {
+  return fetchJson(`/v1/oracle/history${buildHistoryQueryString(query)}`);
+}
+
+export async function getModelPriceHistory(
+  model: string,
+  query: HistoryQuery = {},
+): Promise<unknown> {
+  return fetchJson(
+    `/v1/oracle/models/${encodeURIComponent(model)}/price-history${buildHistoryQueryString(query)}`,
+  );
+}
+
 export async function getActiveMethodologyVersion(): Promise<number | null> {
   try {
     const data = (await getMethodology()) as Record<string, unknown>;

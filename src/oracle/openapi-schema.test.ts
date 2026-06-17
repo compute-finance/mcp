@@ -270,12 +270,33 @@ describe("isOracleBackedTool", () => {
     assert.ok(isOracleBackedTool("data_get_basket"));
     assert.ok(isOracleBackedTool("data_get_price"));
     assert.ok(isOracleBackedTool("data_get_scu"));
+    assert.ok(isOracleBackedTool("data_get_history"));
+    assert.ok(isOracleBackedTool("data_get_model_price_history"));
   });
 
   it("returns false for local tools", () => {
     assert.ok(!isOracleBackedTool("compute_estimate"));
     assert.ok(!isOracleBackedTool("render_session_report"));
     assert.ok(!isOracleBackedTool("telemetry_get_history"));
+  });
+});
+
+describe("FALLBACK_SCHEMAS — history surfaces", () => {
+  it("ships a per-model fallback that pins model as a required parameter — Bug guarded: if the oracle is unreachable at boot, agents still see a schema that rejects empty model", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_model_price_history as Record<string, unknown>;
+    assert.deepEqual(schema.required, ["model"]);
+  });
+
+  it("ships an index-history fallback with the granularity enum so agents can pick a bucket without round-tripping the OpenAPI", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_history as Record<string, unknown>;
+    const props = schema.properties as Record<string, Record<string, unknown>>;
+    assert.deepEqual(props.granularity.enum, ["per-revision", "daily", "weekly"]);
+  });
+});
+
+describe("PARAM_RENAMES — per-model history", () => {
+  it("remaps the OpenAPI path param `key` to the MCP tool param `model` for the per-model history tool", () => {
+    assert.equal(_internals.PARAM_RENAMES.data_get_model_price_history.key, "model");
   });
 });
 

@@ -8,6 +8,8 @@ import {
   getCpi,
   getReconstitutions,
   getMethodology,
+  getHistory,
+  getModelPriceHistory,
   costUsd,
 } from "./oracle/client.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
@@ -209,6 +211,58 @@ describe("smoke: compute_compare", () => {
       assert.equal(typeof r.model, "string");
       assert.equal(typeof r.usd_cost, "number");
       assert.ok(r.usd_cost >= 0);
+    }
+  });
+});
+
+describe("smoke: data_get_history", () => {
+  it("returns an envelope with granularity, count, and a non-empty SCU point array", { timeout: 10_000 }, async () => {
+    const data = (await getHistory({ granularity: "per-revision" })) as Record<string, unknown>;
+    assert.equal(typeof data.from, "string");
+    assert.equal(typeof data.to, "string");
+    assert.equal(data.granularity, "per-revision");
+    assert.equal(typeof data.count, "number");
+    assert.equal(typeof data.truncated, "boolean");
+    const points = data.data as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(points), "data must be an array");
+    assert.ok(points.length > 0, "history must not be empty on a synced oracle");
+    const first = points[0];
+    assert.equal(typeof first.date, "string");
+    assert.equal(typeof first.scuUsd, "number");
+    assert.equal(typeof first.revisionVersion, "number");
+    assert.equal(typeof first.methodologyVersion, "number");
+    assert.equal(typeof first.metadataHash, "string");
+    assert.ok(/^0x[0-9a-f]{64}$/.test(first.metadataHash as string), "metadataHash must be a 0x bytes32 hex");
+  });
+
+  it("honours ?granularity=daily and aligns each point's date to UTC midnight", { timeout: 10_000 }, async () => {
+    const data = (await getHistory({ granularity: "daily" })) as Record<string, unknown>;
+    assert.equal(data.granularity, "daily");
+    const points = data.data as Array<{ date: string }>;
+    for (const p of points) {
+      assert.ok(/T00:00:00\.000Z$/.test(p.date), `daily point '${p.date}' must align to UTC midnight`);
+    }
+  });
+});
+
+describe("smoke: data_get_model_price_history", () => {
+  it("returns input/output USD prices for an index-eligible model with the family slot echoed", { timeout: 10_000 }, async () => {
+    const basket = await getBasketPrices();
+    assert.ok(basket.length > 0, "basket must be non-empty");
+    const sample = basket[0];
+    const data = (await getModelPriceHistory(sample.model)) as Record<string, unknown>;
+    assert.equal(data.modelKey, sample.model);
+    assert.equal(typeof data.family, "string");
+    assert.ok((data.family as string).length > 0, "family must be a non-empty slot key");
+    assert.ok(Array.isArray(data.unavailableRevisions), "unavailableRevisions must be an array (possibly empty)");
+    const points = data.data as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(points), "data must be an array");
+    if (points.length > 0) {
+      const first = points[0];
+      assert.equal(typeof first.inputPriceUsdPerMillion, "number");
+      assert.equal(typeof first.outputPriceUsdPerMillion, "number");
+      assert.equal(typeof first.revisionVersion, "number");
+      assert.equal(typeof first.metadataHash, "string");
     }
   });
 });

@@ -27,6 +27,8 @@ import {
   getReconstitutions,
   getMethodology,
   getActiveMethodologyVersion,
+  getHistory as getOracleHistory,
+  getModelPriceHistory,
   costUsd,
 } from "./oracle/client.js";
 import {
@@ -48,6 +50,7 @@ import {
   optionalString,
   optionalBoolean,
   optionalPositiveNumber,
+  optionalHistoryGranularity,
 } from "./tools/validation.js";
 import { text, errorText, textWithContext, isErrorResult } from "./tools/response.js";
 import { rawAnalyzeSession, rawAnalyzeInferences, getHistory } from "./tools/analyze.js";
@@ -82,6 +85,25 @@ async function buildTools(): Promise<ToolDef[]> {
     }
     return updated;
   });
+}
+
+type HistoryQueryArgs = {
+  from?: string;
+  to?: string;
+  granularity?: "per-revision" | "daily" | "weekly";
+  limit?: number;
+};
+
+function parseHistoryQueryArgs(a: Record<string, unknown>): HistoryQueryArgs | { error: string } {
+  const from = optionalString(a.from, "from");
+  if (typeof from === "object" && from !== null) return from;
+  const to = optionalString(a.to, "to");
+  if (typeof to === "object" && to !== null) return to;
+  const granularity = optionalHistoryGranularity(a.granularity, "granularity");
+  if (typeof granularity === "object" && granularity !== null) return granularity;
+  const limit = optionalPositiveNumber(a.limit, "limit");
+  if (typeof limit === "object" && limit !== null) return limit;
+  return { from, to, granularity, limit };
 }
 
 const startupPromise = warmOpenApiCache().then(() =>
@@ -137,6 +159,18 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             ? { [fm.entries_array]: sorted.slice(0, limit) }
             : { [fm.entries_array]: sorted },
         );
+      }
+      case "data_get_history": {
+        const query = parseHistoryQueryArgs(a);
+        if ("error" in query) return errorText(query.error);
+        return textWithContext(await getOracleHistory(query));
+      }
+      case "data_get_model_price_history": {
+        const model = requireString(a.model, "model");
+        if (typeof model !== "string") return errorText(model.error);
+        const query = parseHistoryQueryArgs(a);
+        if ("error" in query) return errorText(query.error);
+        return textWithContext(await getModelPriceHistory(model, query));
       }
 
       case "compute_estimate": {
