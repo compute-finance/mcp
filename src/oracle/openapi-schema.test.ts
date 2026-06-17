@@ -275,6 +275,7 @@ describe("isOracleBackedTool", () => {
     assert.ok(isOracleBackedTool("data_get_catalog"));
     assert.ok(isOracleBackedTool("data_get_model_price_at"));
     assert.ok(isOracleBackedTool("data_get_baseline"));
+    assert.ok(isOracleBackedTool("data_get_scu_at"));
   });
 
   it("returns false for local tools", () => {
@@ -320,6 +321,21 @@ describe("FALLBACK_SCHEMAS — baseline surface", () => {
   it("does not declare any required parameters — Bug guarded: baseline is a singleton lookup, not a parameterized read", () => {
     const schema = _internals.FALLBACK_SCHEMAS.data_get_baseline as Record<string, unknown>;
     assert.equal(schema.required, undefined);
+  });
+});
+
+describe("FALLBACK_SCHEMAS — scu-at surface", () => {
+  it("ships a scu-at fallback that pins date as the only required parameter — Bug guarded: agents must not call with missing timestamp", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_scu_at as Record<string, unknown>;
+    assert.deepEqual(schema.required, ["date"]);
+    const props = schema.properties as Record<string, Record<string, unknown>>;
+    assert.equal(props.date.type, "string");
+  });
+
+  it("does not declare model as a parameter — Bug guarded: scu-at is a single-point index lookup, not a per-model price lookup", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_scu_at as Record<string, unknown>;
+    const props = schema.properties as Record<string, Record<string, unknown>>;
+    assert.equal(props.model, undefined);
   });
 });
 

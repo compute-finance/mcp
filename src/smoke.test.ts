@@ -13,6 +13,7 @@ import {
   getCatalog,
   getModelPriceAt,
   getBaseline,
+  getScuAt,
   costUsd,
 } from "./oracle/client.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
@@ -321,6 +322,34 @@ describe("smoke: data_get_baseline", () => {
     assert.equal(typeof computeIndex, "number", "/v1/oracle/scu computeIndex must be populated once baseline lands");
     const expected = ((baseline.scuUsd as number) / currentScu) * 100;
     assert.ok(Math.abs((computeIndex as number) - expected) < 1e-6, "computeIndex must equal (baseline / current) × 100");
+  });
+});
+
+describe("smoke: data_get_scu_at", () => {
+  it("returns the same revision as /v1/oracle/latest when asked for the present moment, with full SCU@T payload", { timeout: 10_000 }, async () => {
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const point = (await getScuAt(at)) as Record<string, unknown> | null;
+    assert.ok(point !== null, "scu-at must resolve a confirmed revision within the live series");
+    assert.equal(typeof point.scuUsd, "number");
+    assert.ok((point.scuUsd as number) > 0, "scuUsd must be positive");
+    assert.equal(typeof point.scuUsd18, "string");
+    assert.equal(typeof point.revisionVersion, "number");
+    assert.equal(typeof point.methodologyVersion, "number");
+    assert.equal(typeof point.publishedAt, "string");
+    assert.equal(typeof point.metadataHash, "string");
+    assert.match(point.metadataHash as string, /^0x[0-9a-f]{64}$/);
+
+    const baseline = (await getBaseline()) as Record<string, unknown> | null;
+    if (baseline) {
+      const expected = ((baseline.scuUsd as number) / (point.scuUsd as number)) * 100;
+      assert.ok(typeof point.computeIndex === "number", "computeIndex must be populated once baseline lands");
+      assert.ok(Math.abs((point.computeIndex as number) - expected) < 1e-6, "computeIndex must equal (baseline / scuUsd) × 100");
+    }
+  });
+
+  it("returns null for a timestamp that precedes the genesis revision — Bug guarded: pre-genesis lookups must not fabricate a value", { timeout: 10_000 }, async () => {
+    const point = await getScuAt("2020-01-01T00:00:00Z");
+    assert.equal(point, null);
   });
 });
 

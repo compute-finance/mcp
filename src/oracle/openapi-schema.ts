@@ -87,6 +87,7 @@ const TOOL_TO_OPERATION: Record<string, string> = {
   data_get_catalog: "OraclePublicController_getCatalog",
   data_get_model_price_at: "OraclePublicController_getModelPriceAt",
   data_get_baseline: "OraclePublicController_getBaseline",
+  data_get_scu_at: "OraclePublicController_getScuAt",
 };
 
 // Used when the OpenAPI spec is unreachable; frozen as a safety net.
@@ -190,6 +191,18 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
       },
     },
     required: ["model", "date"],
+  },
+  data_get_scu_at: {
+    type: "object",
+    properties: {
+      date: {
+        type: "string",
+        description:
+          "ISO 8601 timestamp (e.g. '2026-06-15T12:00:00Z'). Must not be in the future. Returns null when the timestamp precedes the genesis revision.",
+        examples: ["2026-06-15T12:00:00Z"],
+      },
+    },
+    required: ["date"],
   },
 };
 
