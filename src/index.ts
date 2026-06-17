@@ -29,6 +29,8 @@ import {
   getActiveMethodologyVersion,
   getHistory as getOracleHistory,
   getModelPriceHistory,
+  getCatalog,
+  getModelPriceAt,
   costUsd,
 } from "./oracle/client.js";
 import {
@@ -171,6 +173,16 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const query = parseHistoryQueryArgs(a);
         if ("error" in query) return errorText(query.error);
         return textWithContext(await getModelPriceHistory(model, query));
+      }
+      case "data_get_catalog": {
+        return textWithContext(await getCatalog());
+      }
+      case "data_get_model_price_at": {
+        const model = requireString(a.model, "model");
+        if (typeof model !== "string") return errorText(model.error);
+        const date = requireString(a.date, "date");
+        if (typeof date !== "string") return errorText(date.error);
+        return textWithContext(await getModelPriceAt(model, date));
       }
 
       case "compute_estimate": {

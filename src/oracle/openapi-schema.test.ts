@@ -272,6 +272,8 @@ describe("isOracleBackedTool", () => {
     assert.ok(isOracleBackedTool("data_get_scu"));
     assert.ok(isOracleBackedTool("data_get_history"));
     assert.ok(isOracleBackedTool("data_get_model_price_history"));
+    assert.ok(isOracleBackedTool("data_get_catalog"));
+    assert.ok(isOracleBackedTool("data_get_model_price_at"));
   });
 
   it("returns false for local tools", () => {
@@ -294,9 +296,27 @@ describe("FALLBACK_SCHEMAS — history surfaces", () => {
   });
 });
 
+describe("FALLBACK_SCHEMAS — catalog surfaces", () => {
+  it("ships an empty-object catalog fallback so agents can call it without any parameters", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_catalog as Record<string, unknown>;
+    assert.deepEqual(schema.properties, {});
+  });
+
+  it("ships a price-at fallback that pins both model and date as required — Bug guarded: agents must not call with missing date", () => {
+    const schema = _internals.FALLBACK_SCHEMAS.data_get_model_price_at as Record<string, unknown>;
+    assert.deepEqual(schema.required, ["model", "date"]);
+    const props = schema.properties as Record<string, Record<string, unknown>>;
+    assert.equal(props.date.type, "string");
+  });
+});
+
 describe("PARAM_RENAMES — per-model history", () => {
   it("remaps the OpenAPI path param `key` to the MCP tool param `model` for the per-model history tool", () => {
     assert.equal(_internals.PARAM_RENAMES.data_get_model_price_history.key, "model");
+  });
+
+  it("remaps the OpenAPI path param `key` to the MCP tool param `model` for the price-at tool", () => {
+    assert.equal(_internals.PARAM_RENAMES.data_get_model_price_at.key, "model");
   });
 });
 

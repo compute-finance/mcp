@@ -100,6 +100,20 @@ export const toolDefinitions: ToolDef[] = [
     inputSchema: FALLBACK_SCHEMAS.data_get_model_price_history,
     annotations: ORACLE,
   },
+  {
+    name: "data_get_catalog",
+    description:
+      "Full catalog of tracked models — every model with a recorded price, including non-index entries and pricing-only providers without SDK integration. Source: Oracle API (/v1/oracle/catalog). Each entry carries modelKey, displayName, provider, family, integrated flag (true if SDK-routable), indexMember flag (true if current family representative in the latest confirmed revision), currentPrice with input/output USD per million tokens and observedAt timestamp, and per-component cache/reasoning blocks. For basket-only display, use data_get_basket instead.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_catalog,
+    annotations: ORACLE,
+  },
+  {
+    name: "data_get_model_price_at",
+    description:
+      "Per-model input/output USD price effective at a specific timestamp. Source: Oracle API (/v1/oracle/models/{model}/price-at). Response is a discriminated union by source: 'manifest' when the model is the family representative in the revision active at that date (cross-links revisionVersion, methodologyVersion, metadataHash, family for verification), or 'providerCost' when only catalog pricing exists (step-function fallback). observedAt reflects when the price was recorded. Returns an error for malformed or future dates, untracked models, or dates preceding all available data.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_model_price_at,
+    annotations: ORACLE,
+  },
 
   {
     name: "compute_estimate",
