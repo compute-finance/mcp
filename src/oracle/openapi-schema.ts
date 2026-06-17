@@ -84,6 +84,8 @@ const TOOL_TO_OPERATION: Record<string, string> = {
   data_get_methodology: "MethodologyPublicController_getChangelog",
   data_get_history: "OraclePublicController_getHistory",
   data_get_model_price_history: "OraclePublicController_getModelPriceHistory",
+  data_get_catalog: "OraclePublicController_getCatalog",
+  data_get_model_price_at: "OraclePublicController_getModelPriceAt",
 };
 
 // Used when the OpenAPI spec is unreachable; frozen as a safety net.
@@ -167,6 +169,25 @@ export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
       },
     },
     required: ["model"],
+  },
+  data_get_catalog: { type: "object", properties: {} },
+  data_get_model_price_at: {
+    type: "object",
+    properties: {
+      model: {
+        type: "string",
+        description:
+          "Model pricing key (e.g. 'gpt-5.5'). Returns the price effective at the requested timestamp.",
+        examples: ["gpt-5.5"],
+      },
+      date: {
+        type: "string",
+        description:
+          "ISO 8601 timestamp (e.g. '2026-06-15T12:00:00Z'). Must not be in the future.",
+        examples: ["2026-06-15T12:00:00Z"],
+      },
+    },
+    required: ["model", "date"],
   },
 };
 
@@ -309,6 +330,7 @@ function buildInputSchema(
 const PARAM_RENAMES: Record<string, Record<string, string>> = {
   data_get_price: { key: "model" },
   data_get_model_price_history: { key: "model" },
+  data_get_model_price_at: { key: "model" },
 };
 
 /** Apply per-tool parameter renames to a derived schema. */

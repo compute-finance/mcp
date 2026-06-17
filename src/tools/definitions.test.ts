@@ -78,4 +78,30 @@ describe("toolDefinitions", () => {
     assert.ok(tool.description.includes("unavailableRevisions"));
     assert.ok(tool.description.includes("input/output"));
   });
+
+  it("SHOULD include data_get_catalog and data_get_model_price_at as ORACLE-annotated read tools", () => {
+    for (const name of ["data_get_catalog", "data_get_model_price_at"]) {
+      const tool = toolDefinitions.find((t) => t.name === name);
+      assert.ok(tool, `${name} missing`);
+      assert.equal(tool.annotations?.readOnlyHint, true);
+      assert.equal(tool.annotations?.destructiveHint, false);
+      assert.equal(tool.annotations?.idempotentHint, true);
+    }
+  });
+
+  it("SHOULD describe data_get_catalog with the indexMember and integrated flags — Bug guarded: agents must distinguish catalog-only from basket entries", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_catalog");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("indexMember"));
+    assert.ok(tool.description.includes("integrated"));
+    assert.ok(tool.description.includes("pricing-only"));
+  });
+
+  it("SHOULD describe data_get_model_price_at with the discriminated source union — Bug guarded: agents must route on manifest vs providerCost source", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_price_at");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("manifest"));
+    assert.ok(tool.description.includes("providerCost"));
+    assert.ok(tool.description.includes("source"));
+  });
 });

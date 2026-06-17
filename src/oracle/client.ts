@@ -108,6 +108,27 @@ export async function getModelPriceHistory(
   );
 }
 
+let catalogCache: CacheEntry<unknown> | null = null;
+
+export async function getCatalog(): Promise<unknown> {
+  if (catalogCache && Date.now() - catalogCache.fetchedAt < CACHE_TTL_MS) {
+    return catalogCache.data;
+  }
+  const data = await fetchJson("/v1/oracle/catalog");
+  catalogCache = { data, fetchedAt: Date.now() };
+  return data;
+}
+
+export async function getModelPriceAt(
+  model: string,
+  date: string,
+): Promise<unknown> {
+  const params = new URLSearchParams({ date });
+  return fetchJson(
+    `/v1/oracle/models/${encodeURIComponent(model)}/price-at?${params.toString()}`,
+  );
+}
+
 export async function getActiveMethodologyVersion(): Promise<number | null> {
   try {
     const data = (await getMethodology()) as Record<string, unknown>;

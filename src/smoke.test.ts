@@ -10,6 +10,8 @@ import {
   getMethodology,
   getHistory,
   getModelPriceHistory,
+  getCatalog,
+  getModelPriceAt,
   costUsd,
 } from "./oracle/client.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
@@ -264,6 +266,42 @@ describe("smoke: data_get_model_price_history", () => {
       assert.equal(typeof first.revisionVersion, "number");
       assert.equal(typeof first.metadataHash, "string");
     }
+  });
+});
+
+describe("smoke: data_get_catalog", () => {
+  it("returns models array with currentPrice and indexMember flag", { timeout: 10_000 }, async () => {
+    const data = (await getCatalog()) as Record<string, unknown>;
+    const models = data.models as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(models), "models must be an array");
+    assert.ok(models.length > 0, "catalog must not be empty on a synced oracle");
+    assert.equal(typeof data.truncated, "boolean");
+    assert.equal(typeof data.generatedAt, "string");
+    const first = models[0];
+    assert.equal(typeof first.modelKey, "string");
+    assert.equal(typeof first.displayName, "string");
+    assert.equal(typeof first.integrated, "boolean");
+    assert.equal(typeof first.indexMember, "boolean");
+    const cp = first.currentPrice as Record<string, unknown>;
+    assert.ok(cp, "every catalog entry carries currentPrice");
+    assert.equal(typeof cp.inputPriceUsdPerMillion, "number");
+    assert.equal(typeof cp.outputPriceUsdPerMillion, "number");
+    assert.equal(typeof cp.observedAt, "string");
+  });
+});
+
+describe("smoke: data_get_model_price_at", () => {
+  it("returns a discriminated source response for an index-eligible model at a past timestamp", { timeout: 10_000 }, async () => {
+    const basket = await getBasketPrices();
+    assert.ok(basket.length > 0, "basket must be non-empty");
+    const sample = basket[0];
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const data = (await getModelPriceAt(sample.model, yesterday)) as Record<string, unknown>;
+    assert.equal(data.modelKey, sample.model);
+    assert.ok(data.source === "manifest" || data.source === "providerCost", "source must be the discriminator literal");
+    assert.equal(typeof data.inputPriceUsdPerMillion, "number");
+    assert.equal(typeof data.outputPriceUsdPerMillion, "number");
+    assert.equal(typeof data.observedAt, "string");
   });
 });
 
