@@ -25,7 +25,7 @@ export interface BasketFieldMap {
   provider: string;
   provider_key: string;
   provider_name: string;
-  tier: string;
+  family: string;
   integrated: string;
   released_at: string;
   marked_up_usd_price: string;
@@ -55,7 +55,7 @@ export const DEFAULT_BASKET: BasketFieldMap = {
   provider: "provider",
   provider_key: "key",
   provider_name: "name",
-  tier: "tier",
+  family: "family",
   integrated: "integrated",
   released_at: "releasedAt",
   marked_up_usd_price: "markedUpUsdPricePerMillion",
@@ -172,7 +172,7 @@ const BASKET_MATCHERS: Record<
   model_id: { required: ["id"], type: "string", exclude: ["oracle", "prefix", "key"] },
   display_name: { required: ["name"], preferred: ["display"], type: "string", exclude: ["provider"] },
   provider: { required: ["provider"], type: "object" },
-  tier: { required: ["tier"], type: "string" },
+  family: { required: ["family"], exclude: ["count", "id"], type: "string" },
   integrated: { required: ["integrat"], type: "boolean" },
   released_at: { required: ["releas"], type: "string" },
   marked_up_usd_price: {
@@ -297,7 +297,7 @@ function deriveBasketMap(responseSchema: SchemaObj): {
       provider: mapped.provider,
       provider_key,
       provider_name,
-      tier: mapped.tier,
+      family: mapped.family,
       integrated: mapped.integrated,
       released_at: mapped.released_at,
       marked_up_usd_price: mapped.marked_up_usd_price,

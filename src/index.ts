@@ -22,8 +22,8 @@ import {
   getBasketPrices,
   getModelPrice,
   getScu,
+  getBreakdown,
   getCpi,
-  getTiers,
   getReconstitutions,
   getMethodology,
   getActiveMethodologyVersion,
@@ -115,10 +115,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "data_get_scu":
         return textWithContext(await getScu());
+      case "data_get_breakdown":
+        return textWithContext(await getBreakdown());
       case "data_get_cpi":
         return textWithContext(await getCpi());
-      case "data_get_tiers":
-        return textWithContext(await getTiers());
       case "data_get_methodology":
         return textWithContext(await getMethodology());
       case "data_get_reconstitutions": {
@@ -169,19 +169,20 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           .map((p) => ({
             model: p.model,
             provider: p.provider,
-            tier: p.tier,
+            family: p.family,
             usd_cost: round(costUsd(p, inT, outT), 6),
           }))
           .sort((x, y) => x.usd_cost - y.usd_cost);
+        const by_family: Record<string, typeof ranked> = {};
+        for (const row of ranked) {
+          const key = row.family || "(unspecified)";
+          (by_family[key] ??= []).push(row);
+        }
         return textWithContext({
           input_tokens: inT,
           output_tokens: outT,
           ranked,
-          by_tier: {
-            frontier: ranked.filter((r) => r.tier === "frontier"),
-            standard: ranked.filter((r) => r.tier === "standard"),
-            lightweight: ranked.filter((r) => r.tier === "lightweight"),
-          },
+          by_family,
           methodology_version: methodologyVersion,
           source: "api.compute.finance/v1/oracle/basket",
         });

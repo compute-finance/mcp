@@ -24,7 +24,7 @@ const LIVE_MODEL_SCHEMA = {
       },
       required: ["key", "name"],
     },
-    tier: { type: "string" },
+    family: { type: "string" },
     integrated: { type: "boolean" },
     weiPricePerMillion: {
       type: "object",
@@ -115,7 +115,7 @@ describe("deriveBasketMap — current schema", () => {
     assert.equal(map.provider, "provider");
     assert.equal(map.provider_key, "key");
     assert.equal(map.provider_name, "name");
-    assert.equal(map.tier, "tier");
+    assert.equal(map.family, "family");
     assert.equal(map.integrated, "integrated");
     assert.equal(map.released_at, "releasedAt");
     assert.equal(map.marked_up_usd_price, "markedUpUsdPricePerMillion");

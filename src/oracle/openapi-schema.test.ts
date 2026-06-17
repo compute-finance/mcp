@@ -85,12 +85,6 @@ const MOCK_SPEC = {
         },
       },
     },
-    "/v1/oracle/tiers": {
-      get: {
-        operationId: "OraclePublicController_getTiers",
-        parameters: [],
-      },
-    },
     "/v1/oracle/reconstitutions": {
       get: {
         operationId: "OraclePublicController_getReconstitutions",
@@ -108,7 +102,7 @@ const MOCK_SPEC = {
         type: "object",
         properties: {
           id: { type: "string" },
-          tier: { type: "string" },
+          family: { type: "string" },
         },
       },
       BasketResponseDto: {
@@ -204,10 +198,11 @@ describe("buildInputSchema", () => {
 describe("buildSchemaMap", () => {
   it("builds map from all operationIds", () => {
     const map = buildSchemaMap(MOCK_SPEC as any);
-    assert.equal(map.size, 5);
+    assert.equal(map.size, 4);
     assert.ok(map.has("OraclePublicController_getScu"));
     assert.ok(map.has("OraclePublicController_getModel"));
     assert.ok(map.has("OraclePublicController_getBasket"));
+    assert.ok(!map.has("OraclePublicController_getTiers"));
   });
 
   it("parameterless operations get empty properties", () => {
@@ -319,7 +314,7 @@ describe("deepResolveSchema", () => {
     assert.equal(items.type, "object");
     const props = (items as any).properties;
     assert.ok("id" in props);
-    assert.ok("tier" in props);
+    assert.ok("family" in props);
   });
 
   it("resolves $refs in object properties", () => {
@@ -370,7 +365,7 @@ describe("extractResponseSchema", () => {
   });
 
   it("returns null when no responses defined", () => {
-    const op = MOCK_SPEC.paths["/v1/oracle/tiers"].get;
+    const op = { operationId: "test_no_responses", parameters: [] };
     const schema = extractResponseSchema(MOCK_SPEC as any, op as any);
     assert.equal(schema, null);
   });
@@ -395,7 +390,6 @@ describe("buildResponseSchemaMap", () => {
 
   it("skips operations without response schemas", () => {
     const map = buildResponseSchemaMap(MOCK_SPEC as any);
-    assert.ok(!map.has("OraclePublicController_getTiers"));
     assert.ok(!map.has("OraclePublicController_getReconstitutions"));
   });
 
@@ -433,8 +427,8 @@ describe("getAllOracleToolSchemas (mocked fetch)", () => {
     assert.ok("data_get_price" in schemas);
     assert.ok("data_get_scu" in schemas);
     assert.ok("data_get_cpi" in schemas);
-    assert.ok("data_get_tiers" in schemas);
     assert.ok("data_get_reconstitutions" in schemas);
+    assert.ok(!("data_get_tiers" in schemas), "data_get_tiers must be gone — endpoint removed from API");
     // Should NOT contain local tools
     assert.ok(!("compute_estimate" in schemas));
     assert.ok(!("render_session_report" in schemas));

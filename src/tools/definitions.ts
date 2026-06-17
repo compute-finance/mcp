@@ -40,7 +40,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_basket",
     description:
-      "All models in the oracle basket — provider, tier (frontier/standard/lightweight), input/output USD and wei prices per million tokens, and per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for the full pricing picture. For a single model, use data_get_price instead.",
+      "All models in the oracle basket — provider, family (e.g. openai.gpt, anthropic.claude, google.gemini, xai.grok), input/output USD and wei prices per million tokens, and per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for the full pricing picture. For a single model, use data_get_price instead.",
     inputSchema: FALLBACK_SCHEMAS.data_get_basket,
     annotations: ORACLE,
   },
@@ -54,22 +54,22 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_scu",
     description:
-      "Current Standard Compute Unit (SCU) — a single number representing the market price of AI compute, computed per the active oracle methodology (the response carries methodologyVersion; see data_get_methodology for the formula in force). Source: Oracle API.",
+      "Current Standard Compute Unit (SCU) — value plus the methodology-versioned `breakdown` discriminated union listing every family representative with USD-per-million-token prices and blended cost. The response carries methodologyVersion; see data_get_methodology for the formula in force. For the breakdown alone, use data_get_breakdown. Source: Oracle API.",
     inputSchema: FALLBACK_SCHEMAS.data_get_scu,
+    annotations: ORACLE,
+  },
+  {
+    name: "data_get_breakdown",
+    description:
+      "Per-family blended-cost breakdown of the SCU — methodology-versioned discriminated union (keyed by methodologyVersion) with one entry per family representative (family, modelKey, inputPriceUsdPerMillion, outputPriceUsdPerMillion, blendedCostUsd). Source: Oracle API (/v1/oracle/scu.breakdown). Use to attribute SCU contributions to specific model families. For the full SCU response with reference workload, use data_get_scu instead.",
+    inputSchema: FALLBACK_SCHEMAS.data_get_breakdown,
     annotations: ORACLE,
   },
   {
     name: "data_get_cpi",
     description:
-      "Full Compute Price Index — raw oracle response with provider, tier, integration flag, raw and marked-up prices, SCU decomposition, basket version. Source: Oracle API. Use data_get_basket for a cleaner view focused on pricing; use this for the complete index data.",
+      "Full Compute Price Index — raw oracle response with provider, family, integration flag, raw and marked-up prices, scuUsd, basket version, last-updated timestamp. Source: Oracle API. Use data_get_basket for a cleaner view focused on pricing; use this for the complete index data. For the per-family blended-cost breakdown, use data_get_breakdown.",
     inputSchema: FALLBACK_SCHEMAS.data_get_cpi,
-    annotations: ORACLE,
-  },
-  {
-    name: "data_get_tiers",
-    description:
-      "Tier weights and per-tier average cost. Source: Oracle API. Returns the current weight of each tier (frontier, standard, lightweight), model count, and SCU contribution per tier.",
-    inputSchema: FALLBACK_SCHEMAS.data_get_tiers,
     annotations: ORACLE,
   },
   {
@@ -105,7 +105,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_compare",
     description:
-      "Rank all basket models by nominal cost for a workload. Source: Oracle API. Returns a sorted list grouped by tier (frontier/standard/lightweight) with per-model USD cost. Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
+      "Rank all basket models by nominal cost for a workload. Source: Oracle API. Returns a sorted list of per-model USD cost plus a grouping by family (e.g. openai.gpt, anthropic.claude). Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -199,7 +199,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "telemetry_get_history",
     description:
-      "Aggregate stats across logged sessions (deduped, last-wins). Source: local ~/.compute-finance/ storage + Oracle API. Sample size, cumulative effective vs nominal cost, per-profile medians, insights (frontier underuse, cache dominance). Insights require at least 5 sessions.",
+      "Aggregate stats across logged sessions (deduped, last-wins). Source: local ~/.compute-finance/ storage + Oracle API. Sample size, cumulative effective vs nominal cost, per-profile medians, insights (cache dominance). Insights require at least 5 sessions.",
     inputSchema: { type: "object", properties: {} },
     annotations: { ...LOCAL, openWorldHint: true },
   },

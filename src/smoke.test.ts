@@ -4,8 +4,8 @@ import {
   getBasketPrices,
   getModelPrice,
   getScu,
+  getBreakdown,
   getCpi,
-  getTiers,
   getReconstitutions,
   getMethodology,
   costUsd,
@@ -45,8 +45,8 @@ describe("smoke: data_get_basket", () => {
     assert.ok(first.input_usd_per_million > 0, "input price must be positive");
     assert.ok(first.output_usd_per_million > 0, "output price must be positive");
     assert.equal(typeof first.provider, "string");
-    assert.ok(["frontier", "standard", "lightweight"].includes(first.tier),
-      `tier must be a known value, got: ${first.tier}`);
+    assert.equal(typeof first.family, "string");
+    assert.ok(first.family.length > 0, "family must be non-empty");
   });
 
   it("every model has an oracle-published cache block with structured per-component attribution", { timeout: 10_000 }, async () => {
@@ -80,7 +80,7 @@ describe("smoke: data_get_price", () => {
     assert.ok(price.input_usd_per_million > 0);
     assert.ok(price.output_usd_per_million > 0);
     assert.equal(typeof price.provider, "string");
-    assert.equal(typeof price.tier, "string");
+    assert.equal(typeof price.family, "string");
   });
 
   it("returns null for nonexistent model", { timeout: 10_000 }, async () => {
@@ -90,7 +90,7 @@ describe("smoke: data_get_price", () => {
 });
 
 describe("smoke: data_get_scu", () => {
-  it("returns SCU value as a positive number", { timeout: 10_000 }, async () => {
+  it("returns SCU value as a positive number with a methodology-versioned breakdown", { timeout: 10_000 }, async () => {
     const data = await getScu() as Record<string, unknown>;
     assert.ok(data !== null && typeof data === "object", "SCU response must be an object");
     const scu = data.scu ?? data.scuUsd ?? data.value ?? data.scu_value;
@@ -98,6 +98,33 @@ describe("smoke: data_get_scu", () => {
       `SCU value must be present, got keys: ${Object.keys(data).join(", ")}`);
     const scuNum = Number(scu);
     assert.ok(scuNum > 0, `SCU must be positive, got: ${scuNum}`);
+
+    const breakdown = data.breakdown as Record<string, unknown> | undefined;
+    assert.ok(breakdown && typeof breakdown === "object", "breakdown discriminated union must be present");
+    assert.equal(
+      breakdown.methodologyVersion,
+      1,
+      "methodologyVersion must be the v1 family-representative shape — a flip is a wire change that must force a re-review",
+    );
+    assert.ok(Array.isArray(breakdown.familyRepresentatives), "familyRepresentatives must be an array");
+    const reps = breakdown.familyRepresentatives as Array<Record<string, unknown>>;
+    assert.ok(reps.length > 0, "familyRepresentatives must be non-empty");
+    const sample = reps[0];
+    assert.equal(typeof sample.family, "string");
+    assert.ok((sample.family as string).length > 0, "family must be a non-empty key");
+    assert.equal(typeof sample.modelKey, "string");
+    assert.equal(typeof sample.inputPriceUsdPerMillion, "number");
+    assert.equal(typeof sample.outputPriceUsdPerMillion, "number");
+    assert.equal(typeof sample.blendedCostUsd, "number");
+  });
+});
+
+describe("smoke: data_get_breakdown", () => {
+  it("SHOULD return the same per-family breakdown that ships inside data_get_scu — Bug guarded: the typed extraction must not drift from /scu.breakdown", async () => {
+    const scu = (await getScu()) as Record<string, unknown>;
+    const expected = scu.breakdown;
+    const actual = await getBreakdown();
+    assert.deepEqual(actual, expected);
   });
 });
 
@@ -111,18 +138,6 @@ describe("smoke: data_get_cpi", () => {
 
     const first = models[0] as Record<string, unknown>;
     assert.ok(first[fm.model_id], `model must have '${fm.model_id}' field`);
-  });
-});
-
-describe("smoke: data_get_tiers", () => {
-  it("returns tier definitions with weight and model count", { timeout: 10_000 }, async () => {
-    const data = await getTiers() as Record<string, unknown>;
-    assert.ok(data !== null && typeof data === "object");
-    const tiers = data.tiers ?? data;
-    assert.ok(
-      typeof tiers === "object" && tiers !== null,
-      `tiers data must be present, got keys: ${Object.keys(data).join(", ")}`,
-    );
   });
 });
 
@@ -178,7 +193,7 @@ describe("smoke: compute_compare", () => {
       .map((p) => ({
         model: p.model,
         provider: p.provider,
-        tier: p.tier,
+        family: p.family,
         usd_cost: round(costUsd(p, inputTokens, outputTokens), 6),
       }))
       .sort((x, y) => x.usd_cost - y.usd_cost);

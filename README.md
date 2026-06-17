@@ -61,11 +61,11 @@ npx . setup
 
 | Tool | Description |
 |------|-------------|
-| `data_get_basket` | All models with provider, tier, USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
+| `data_get_basket` | All models with provider, family (e.g. `openai.gpt`, `anthropic.claude`), USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
 | `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) |
-| `data_get_scu` | Current Standard Compute Unit — the market benchmark price |
-| `data_get_cpi` | Full Compute Price Index — basket with SCU breakdown, version, raw/marked-up prices |
-| `data_get_tiers` | Tier weights (frontier, standard, lightweight) and per-tier averages |
+| `data_get_scu` | Current Standard Compute Unit — value plus a methodology-versioned `breakdown` listing every family representative |
+| `data_get_breakdown` | Per-family blended-cost breakdown alone — methodology-versioned discriminated union with one entry per family representative |
+| `data_get_cpi` | Full Compute Price Index — basket with `scuUsd`, version, raw/marked-up prices |
 | `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
 | `data_get_methodology` | Methodology changelog — every version with its formula summary and spec link, plus the version in force |
 
@@ -76,7 +76,7 @@ Cache pricing comes from the Compute Finance Oracle. Session and consumption rep
 | Tool | Description |
 |------|-------------|
 | `compute_estimate` | Nominal USD cost for a model given input/output token counts |
-| `compute_compare` | Rank all basket models by cost for a workload, grouped by tier |
+| `compute_compare` | Rank all basket models by cost for a workload, grouped by family |
 
 ### Render (Claude Code skills)
 

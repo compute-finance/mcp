@@ -1,5 +1,3 @@
-export type Tier = "frontier" | "standard" | "lightweight";
-
 export interface CachePriceComponent {
   usdPerMillion: number;
   ratioOfInput: number;
@@ -19,7 +17,7 @@ export interface ModelPrice {
   display_name: string;
   provider: string;
   provider_name: string;
-  tier: Tier;
+  family: string;
   integrated: boolean;
   released_at: string | null;
   input_usd_per_million: number;
