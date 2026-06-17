@@ -1,7 +1,8 @@
 import {
   getBasketPrices,
   getActiveMethodologyVersion,
-  effectiveCost,
+  priceSession,
+  OracleCachePricingMissingError,
   costUsd,
   resolveCanonicalIn,
 } from "../oracle/client.js";
@@ -65,19 +66,24 @@ export async function renderSessionReport(
   let effective_usd: number | null = null;
   let nominal_usd: number | null = null;
   let cacheNote = "";
+  let cachePricingMissing: OracleCachePricingMissingError | null = null;
   if (normalized) {
     const price = basket.find((p) => p.model === normalized) ?? null;
     if (price) {
-      const eff = effectiveCost(
+      const r = priceSession(
         price,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
         usage.output_tokens,
       );
-      effective_usd = round(eff.effective_usd, 4);
-      nominal_usd = round(eff.nominal_usd, 4);
-      cacheNote = eff.notes[0];
+      nominal_usd = round(r.nominal_usd, 4);
+      if (r.effective) {
+        effective_usd = round(r.effective.effective_usd, 4);
+        cacheNote = r.effective.notes[0];
+      } else {
+        cachePricingMissing = r.cache_pricing_missing;
+      }
     }
   }
 
@@ -108,8 +114,7 @@ export async function renderSessionReport(
   const standards = pickCheapestByTier(basket, "standard");
   const lights = pickCheapestByTier(basket, "lightweight");
 
-  // Strip provider prefix to match the original report template
-  // (`opus-4.6`, not `claude-opus-4.6`) — tighter, easier to scan.
+  // Strip `claude-` prefix so counterfactual rows stay tight (`opus-4.6` vs `claude-opus-4.6`).
   const shortName = (m: string) => m.replace(/^claude-/, "");
   const fmtCounterfactual = (arr: ModelPrice[]) =>
     arr
@@ -149,6 +154,12 @@ export async function renderSessionReport(
       `  Saved by caching:         ${money(round(nominal_usd - effective_usd, 4))}`,
     );
     if (cacheNote) L.push(`  ${cacheNote}`);
+  } else if (cachePricingMissing !== null && nominal_usd !== null) {
+    L.push("Cost (this session):");
+    L.push(`  Nominal (no cache discount):  ${money(nominal_usd)}`);
+    L.push(
+      `  Effective (cache-aware):      unavailable — oracle has not published ${cachePricingMissing.missing} pricing for ${cachePricingMissing.model}`,
+    );
   } else {
     L.push("Cost (this session):");
     L.push("  Current model not tracked by oracle — effective cost unavailable.");

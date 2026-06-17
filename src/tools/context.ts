@@ -1,6 +1,6 @@
 import {
   getBasketPrices,
-  effectiveCost,
+  priceSession,
   resolveCanonicalIn,
 } from "../oracle/client.js";
 import {
@@ -38,13 +38,15 @@ export async function getSessionContext(): Promise<SessionContext | null> {
 
     let cost_so_far = 0;
     if (price) {
-      cost_so_far = effectiveCost(
+      const r = priceSession(
         price,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
         usage.output_tokens,
-      ).effective_usd;
+      );
+      if (!r.effective) return null;
+      cost_so_far = r.effective.effective_usd;
     }
 
     let mostExpensive: { index: number; cost: number } | null = null;
@@ -52,15 +54,16 @@ export async function getSessionContext(): Promise<SessionContext | null> {
       let maxCost = 0;
       let maxIdx = 0;
       for (const inf of transcript.inferences) {
-        const tc = effectiveCost(
+        const r = priceSession(
           price,
           inf.raw_input_tokens,
           inf.cache_read_tokens,
           inf.cache_creation_tokens,
           inf.output_tokens,
-        ).effective_usd;
-        if (tc > maxCost) {
-          maxCost = tc;
+        );
+        if (!r.effective) return null;
+        if (r.effective.effective_usd > maxCost) {
+          maxCost = r.effective.effective_usd;
           maxIdx = inf.index;
         }
       }

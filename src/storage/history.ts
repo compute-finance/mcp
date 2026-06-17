@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ModelPrice } from "../oracle/types.js";
-import { effectiveCost } from "../oracle/client.js";
+import { priceSession } from "../oracle/client.js";
 
 const DIR = join(homedir(), ".compute-finance");
 const SESSIONS = join(DIR, "sessions.jsonl");
@@ -42,8 +42,7 @@ export function logSession(rec: Omit<SessionRecord, "ts">): SessionRecord {
 export function readHistoryRaw(): SessionRecord[] {
   if (!existsSync(SESSIONS)) return [];
   const lines = readFileSync(SESSIONS, "utf8").split("\n").filter(Boolean);
-  // Skip corrupt lines silently. Append-only log can tear on crash mid-write;
-  // one bad line must not take out getStats for the rest of the file.
+  // Append-only log can tear on crash mid-write — skip bad lines so getStats survives.
   const out: SessionRecord[] = [];
   for (const l of lines) {
     try {
@@ -55,8 +54,7 @@ export function readHistoryRaw(): SessionRecord[] {
   return out;
 }
 
-// Dedupe by session_id, last-wins. Re-running the skill on the same session
-// must NOT double-count into cumulative totals or insight evidence.
+// Last-wins dedupe — re-running the skill on the same session must not double-count.
 export function readHistory(): SessionRecord[] {
   const raw = readHistoryRaw();
   const byId = new Map<string, SessionRecord>();
@@ -94,9 +92,7 @@ export interface Insight {
   evidence: Record<string, unknown>;
 }
 
-// Given a frontier model used in a session, find the cheapest same-provider
-// non-frontier alternative in the live basket. Pure data lookup — no
-// provider-specific branches.
+// Pure data lookup — never add provider-specific branches here.
 function cheaperAlternative(
   model: string,
   basket: ModelPrice[],
@@ -130,8 +126,6 @@ function computeInsights(
     basket.filter((p) => p.tier === "frontier").map((p) => p.model),
   );
 
-  // 1. Frontier underused: sessions on a frontier model, profile=edit/research,
-  //    no extended thinking → counterfactual on cheapest same-provider alt.
   const underused = recs.filter(
     (r) =>
       r.model &&
@@ -147,21 +141,25 @@ function computeInsights(
       const current = basket.find((p) => p.model === r.model);
       if (!alt || !current) continue;
       altsSeen.add(alt.model);
-      const currentEff = effectiveCost(
+      const currentPriced = priceSession(
         current,
         r.raw_input_tokens,
         r.cache_read_tokens,
         r.cache_creation_tokens,
         r.output_tokens,
-      ).effective_usd;
-      const altEff = effectiveCost(
+      );
+      const altPriced = priceSession(
         alt,
         r.raw_input_tokens,
         r.cache_read_tokens,
         r.cache_creation_tokens,
         r.output_tokens,
-      ).effective_usd;
-      totalSaved += Math.max(0, currentEff - altEff);
+      );
+      if (!currentPriced.effective || !altPriced.effective) continue;
+      totalSaved += Math.max(
+        0,
+        currentPriced.effective.effective_usd - altPriced.effective.effective_usd,
+      );
     }
     if (totalSaved > 0) {
       const altList = Array.from(altsSeen).join(", ");
@@ -179,7 +177,6 @@ function computeInsights(
     }
   }
 
-  // 2. Cache dominance: median cache_read ratio > 90% of input tokens.
   const withCache = recs.filter(
     (r) => r.raw_input_tokens + r.cache_read_tokens > 0,
   );

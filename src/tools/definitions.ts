@@ -40,14 +40,14 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_basket",
     description:
-      "All models in the oracle basket — provider, tier (frontier/standard/lightweight), input/output USD and wei prices per million tokens, cache read/write multipliers. Source: Oracle API. Use for the full pricing picture. For a single model, use data_get_price instead.",
+      "All models in the oracle basket — provider, tier (frontier/standard/lightweight), input/output USD and wei prices per million tokens, and per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for the full pricing picture. For a single model, use data_get_price instead.",
     inputSchema: FALLBACK_SCHEMAS.data_get_basket,
     annotations: ORACLE,
   },
   {
     name: "data_get_price",
     description:
-      "Price for a single model — input/output USD and wei per million tokens, cache multipliers. Source: Oracle API. Use for one model; for comparing all models use compute_compare. Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
+      "Price for a single model — input/output USD and wei per million tokens, plus per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for one model; for comparing all models use compute_compare. Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
     inputSchema: FALLBACK_SCHEMAS.data_get_price,
     annotations: ORACLE,
   },
@@ -172,7 +172,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "analyze_session",
     description:
-      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
+      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. `current_model_cost.effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -185,7 +185,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "analyze_inferences",
     description:
-      "Raw JSON per-inference breakdown — token counts, tool usage, effective/nominal cost, cache hit ratio, duration per inference. One row per assistant reply. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_consumption_report. Omit session_id for the most recent session.",
+      "Raw JSON per-inference breakdown — token counts, tool usage, effective/nominal cost, cache hit ratio, duration per inference. One row per assistant reply. `inferences[].effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_consumption_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {
