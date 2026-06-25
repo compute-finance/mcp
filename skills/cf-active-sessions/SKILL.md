@@ -6,6 +6,6 @@ description: One-shot overview of recent Claude Code sessions across all project
 # cf-active-sessions
 
 1. Call `render_active_sessions` with no arguments (defaults to last 24h, top 10 by recency, across all projects). Supported optional args: `cwd`, `limit`, `hours`.
-2. Print the `text` field **verbatim**.
+2. Print the `text` field **verbatim, inside a fenced code block** (```), so its monospace column alignment is preserved.
 
 No interpretation, no reformatting.
