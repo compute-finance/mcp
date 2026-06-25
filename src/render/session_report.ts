@@ -1,6 +1,7 @@
 import {
   getBasketPrices,
   getActiveMethodologyVersion,
+  getScu,
   priceSession,
   OracleCachePricingMissingError,
   costUsd,
@@ -16,7 +17,11 @@ import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
 import { ModelPrice } from "../oracle/types.js";
 import { money, renderTokensBlock, line, round } from "./format.js";
-import { renderCostBlock, renderHistoryBlock } from "./blocks.js";
+import {
+  renderCostBlock,
+  renderHistoryBlock,
+  renderOverheadBlock,
+} from "./blocks.js";
 
 export interface SessionReportArgs {
   session_id?: string;
@@ -72,9 +77,12 @@ export async function renderSessionReport(
   let nominal_usd: number | null = null;
   let cacheNote = "";
   let cachePricingMissing: OracleCachePricingMissingError | null = null;
+  let cached_input_usd_per_million = 0;
   if (normalized) {
     const price = basket.find((p) => p.model === normalized) ?? null;
     if (price) {
+      cached_input_usd_per_million =
+        price.cache?.cachedInput?.usdPerMillion ?? 0;
       const r = priceSession(
         price,
         usage.raw_input_tokens,
@@ -90,6 +98,17 @@ export async function renderSessionReport(
         cachePricingMissing = r.cache_pricing_missing;
       }
     }
+  }
+
+  let scu_usd = 0;
+  try {
+    const scu = (await getScu()) as Record<string, unknown> | null;
+    const raw = scu?.scuUsd;
+    const parsed =
+      typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) scu_usd = parsed;
+  } catch {
+    /* SCU fetch optional — overhead block stays hidden */
   }
 
   const stats = await getStats(basket, usage.session_id);
@@ -153,6 +172,18 @@ export async function renderSessionReport(
         : null,
     }),
   );
+
+  const overheadLines = renderOverheadBlock({
+    fixed_overhead_tokens: usage.first_inference_cache_creation_tokens,
+    inferences: usage.inferences,
+    scu_usd,
+    cached_input_usd_per_million,
+  });
+  if (overheadLines.length > 0) {
+    L.push("");
+    L.push(...overheadLines);
+  }
+
   L.push("");
   L.push("Same shape on alternatives (cheapest representative per family, nominal):");
   for (const p of counterfactual) L.push(`  ${fmtCounterfactualRow(p)}`);

@@ -2,7 +2,7 @@ export function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !isFinite(n)) return "—";
   // Sub-dollar amounts keep 4 decimals — per-inference costs need cent precision.
   if (Math.abs(n) < 1) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Humanise a duration — ms under 1s, seconds with one decimal under a minute,
