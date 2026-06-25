@@ -16,7 +16,16 @@ import {
   logInferences,
   LoggedInference,
 } from "../storage/inferences.js";
-import { bar, money, tokens, pad, line, round, duration } from "./format.js";
+import {
+  bar,
+  money,
+  tokens,
+  renderTokensBlock,
+  pad,
+  line,
+  round,
+  duration,
+} from "./format.js";
 
 export interface ConsumptionReportArgs {
   session_id?: string;
@@ -129,6 +138,8 @@ export async function renderConsumptionReport(
       `Prompts: ${summary.prompts}  ·  Inferences: ${summary.inferences}  ·  Tool calls: ${summary.tool_calls}  ·  Cache hit: ${(analysis.cache_hit_ratio * 100).toFixed(1)}%`,
     ),
   );
+  L.push("");
+  L.push(...renderTokensBlock(analysis.totals, summary.inferences));
   L.push("");
   if (price && cacheState.missingCount === 0) {
     L.push(
