@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { money, scuAmount, scuPrice } from "./format.js";
+import { money, scuAmount, scuPrice, multiple } from "./format.js";
 
 describe("money", () => {
   it("SHOULD keep four decimals FOR sub-dollar amounts", () => {
@@ -82,5 +82,36 @@ describe("scuPrice", () => {
   it("SHOULD render the em-dash for a non-finite value", () => {
     assert.equal(scuPrice(NaN), "—");
     assert.equal(scuPrice(Infinity), "—");
+  });
+});
+
+// multiple: "× index" multiplier — one decimal below 10, whole number at/above (`7.2×`, `12×`).
+describe("multiple", () => {
+  it("SHOULD render one decimal below 10", () => {
+    assert.equal(multiple(7.2), "7.2×");
+    assert.equal(multiple(0.3), "0.3×");
+  });
+
+  it("SHOULD switch to a whole number AT the 10× boundary, one decimal just below it", () => {
+    // 10 is the inclusive cutover: at/above → no decimal, just below → one decimal.
+    assert.equal(multiple(10), "10×");
+    assert.equal(multiple(9.9), "9.9×");
+  });
+
+  it("SHOULD render large values with no decimal", () => {
+    assert.equal(multiple(12), "12×");
+  });
+
+  it("SHOULD render the em-dash for null", () => {
+    assert.equal(multiple(null), "—");
+  });
+
+  it("SHOULD render the em-dash for undefined", () => {
+    assert.equal(multiple(undefined), "—");
+  });
+
+  it("SHOULD render the em-dash for a non-finite value — must not surface NaN/Infinity to the report", () => {
+    assert.equal(multiple(NaN), "—");
+    assert.equal(multiple(Infinity), "—");
   });
 });
