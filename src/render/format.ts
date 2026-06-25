@@ -36,6 +36,12 @@ export function scuPrice(n: number | null | undefined): string {
   return `$${n.toFixed(6)}`;
 }
 
+// "× index" multiplier — one decimal under 10, whole number at/above (`7.2×`, `0.3×`, `12×`).
+export function multiple(n: number | null | undefined): string {
+  if (n === null || n === undefined || !isFinite(n)) return "—";
+  return `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}×`;
+}
+
 export function pad(s: string, width: number, align: "l" | "r" = "l"): string {
   if (s.length >= width) return s;
   const fill = " ".repeat(width - s.length);
