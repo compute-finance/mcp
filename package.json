@@ -43,7 +43,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test src",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
