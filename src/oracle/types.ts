@@ -54,3 +54,20 @@ export interface ResolvedModel {
   in_basket: boolean;
   price_source: PriceSource;
 }
+
+// `family` matches ModelPrice.family (same keyspace) — the join key for blended-price lookup.
+export interface ScuFamilyRepresentative {
+  family: string;
+  modelKey: string;
+  inputPriceUsdPerMillion: number;
+  outputPriceUsdPerMillion: number;
+  blendedCostUsd: number;
+}
+
+export interface ScuValue {
+  scuUsd: number;
+  computeIndex: number | null;
+  methodologyVersion: number;
+  updatedAt: string;
+  familyRepresentatives: ScuFamilyRepresentative[];
+}
