@@ -55,17 +55,19 @@ describe("smoke: data_get_basket", () => {
     assert.ok(first.family.length > 0, "family must be non-empty");
   });
 
-  it("every model has an oracle-published cache block with structured per-component attribution", { timeout: 10_000 }, async () => {
+  it("publishes well-formed cache blocks where present, for at least one model", { timeout: 10_000 }, async () => {
     const models = await getBasketPrices();
+    // The oracle doesn't publish cache for every model and the MCP handles absence — validate blocks where present, not completeness.
+    let withCache = 0;
     for (const m of models) {
-      assert.ok(m.cache, `${m.model}: oracle has not published a cache block`);
+      if (!m.cache) continue;
       const components = [
         ["cachedInput", m.cache.cachedInput] as const,
         ["cacheWrite5m", m.cache.cacheWrite5m] as const,
         ["cacheWrite1h", m.cache.cacheWrite1h] as const,
       ];
       const hasAny = components.some(([, c]) => c !== null);
-      assert.ok(hasAny, `${m.model}: cache block has no components published`);
+      assert.ok(hasAny, `${m.model}: cache block present but has no components published`);
       for (const [name, c] of components) {
         if (c === null) continue;
         assert.equal(typeof c.usdPerMillion, "number", `${m.model}.${name}.usdPerMillion not a number`);
@@ -74,7 +76,9 @@ describe("smoke: data_get_basket", () => {
         assert.equal(typeof c.source, "string", `${m.model}.${name}.source not a string`);
         assert.ok(c.source.length > 0, `${m.model}.${name}.source empty`);
       }
+      withCache += 1;
     }
+    assert.ok(withCache > 0, "no basket model carries a cache block — the cache pricing pipeline is broken");
   });
 });
 
