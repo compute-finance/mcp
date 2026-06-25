@@ -2,13 +2,18 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ModelPrice } from "../oracle/types.js";
-import { priceSession } from "../oracle/client.js";
 
-const DIR = join(homedir(), ".compute-finance");
-const SESSIONS = join(DIR, "sessions.jsonl");
+function storageDir(): string {
+  return process.env.COMPUTE_FINANCE_DIR ?? join(homedir(), ".compute-finance");
+}
+
+function sessionsPath(): string {
+  return join(storageDir(), "sessions.jsonl");
+}
 
 function ensureDir() {
-  if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
+  const dir = storageDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
 export interface SessionRecord {
@@ -35,13 +40,13 @@ export interface SessionRecord {
 export function logSession(rec: Omit<SessionRecord, "ts">): SessionRecord {
   ensureDir();
   const full: SessionRecord = { ...rec, ts: new Date().toISOString() };
-  appendFileSync(SESSIONS, JSON.stringify(full) + "\n");
+  appendFileSync(sessionsPath(), JSON.stringify(full) + "\n");
   return full;
 }
 
 export function readHistoryRaw(): SessionRecord[] {
-  if (!existsSync(SESSIONS)) return [];
-  const lines = readFileSync(SESSIONS, "utf8").split("\n").filter(Boolean);
+  if (!existsSync(sessionsPath())) return [];
+  const lines = readFileSync(sessionsPath(), "utf8").split("\n").filter(Boolean);
   // Append-only log can tear on crash mid-write — skip bad lines so getStats survives.
   const out: SessionRecord[] = [];
   for (const l of lines) {
@@ -127,8 +132,14 @@ function computeInsights(
   return out;
 }
 
-export async function getStats(basket: ModelPrice[]): Promise<HistoryStats> {
-  const recs = readHistory();
+export async function getStats(
+  basket: ModelPrice[],
+  excludeSessionId?: string,
+): Promise<HistoryStats> {
+  const all = readHistory();
+  const recs = excludeSessionId
+    ? all.filter((r) => r.session_id !== excludeSessionId)
+    : all;
   const seen = new Set(recs.map((r) => r.session_id));
   const byProfile: Record<string, SessionRecord[]> = {};
   for (const r of recs) (byProfile[r.profile] ??= []).push(r);
