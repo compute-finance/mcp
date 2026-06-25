@@ -4,6 +4,8 @@ import {
   ModelPrice,
   OracleCacheBlock,
   OracleCacheComponentWire,
+  ScuFamilyRepresentative,
+  ScuValue,
 } from "./types.js";
 import { getFieldMap } from "./field-map.js";
 
@@ -53,6 +55,49 @@ export async function getScu(): Promise<unknown> {
 export async function getBreakdown(): Promise<unknown> {
   const scu = (await getScu()) as Record<string, unknown> | null;
   return scu && typeof scu === "object" ? scu.breakdown ?? null : null;
+}
+
+function parseFamilyRepresentatives(breakdown: unknown): ScuFamilyRepresentative[] {
+  if (!breakdown || typeof breakdown !== "object") return [];
+  const reps = (breakdown as Record<string, unknown>).familyRepresentatives;
+  if (!Array.isArray(reps)) return [];
+  const out: ScuFamilyRepresentative[] = [];
+  for (const r of reps) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    if (
+      typeof o.family === "string" &&
+      typeof o.modelKey === "string" &&
+      typeof o.inputPriceUsdPerMillion === "number" &&
+      typeof o.outputPriceUsdPerMillion === "number" &&
+      typeof o.blendedCostUsd === "number"
+    ) {
+      out.push({
+        family: o.family,
+        modelKey: o.modelKey,
+        inputPriceUsdPerMillion: o.inputPriceUsdPerMillion,
+        outputPriceUsdPerMillion: o.outputPriceUsdPerMillion,
+        blendedCostUsd: o.blendedCostUsd,
+      });
+    }
+  }
+  return out;
+}
+
+// Typed /v1/oracle/scu for renderers (reuses getScu's cache); null when scuUsd is unusable.
+export async function getScuValue(): Promise<ScuValue | null> {
+  const scu = (await getScu()) as Record<string, unknown> | null;
+  if (!scu || typeof scu !== "object") return null;
+  const scuUsd = scu.scuUsd;
+  if (typeof scuUsd !== "number" || !isFinite(scuUsd) || scuUsd <= 0) return null;
+  return {
+    scuUsd,
+    computeIndex: typeof scu.computeIndex === "number" ? scu.computeIndex : null,
+    methodologyVersion:
+      typeof scu.methodologyVersion === "number" ? scu.methodologyVersion : 0,
+    updatedAt: typeof scu.updatedAt === "string" ? scu.updatedAt : "",
+    familyRepresentatives: parseFamilyRepresentatives(scu.breakdown),
+  };
 }
 
 export async function getReconstitutions(): Promise<unknown> {
@@ -480,4 +525,5 @@ export const _internals = {
   adaptComponent,
   adaptCache,
   buildAttributionNotes,
+  parseFamilyRepresentatives,
 };

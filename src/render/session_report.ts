@@ -1,6 +1,7 @@
 import {
   getBasketPrices,
   getActiveMethodologyVersion,
+  getScuValue,
   priceSession,
   OracleCachePricingMissingError,
   costUsd,
@@ -14,8 +15,11 @@ import {
 } from "../storage/session.js";
 import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
-import { ModelPrice } from "../oracle/types.js";
-import { money, tokens, line, round } from "./format.js";
+import { ModelPrice, ScuValue } from "../oracle/types.js";
+import { money, tokens, line, round, scuAmount, scuPrice } from "./format.js";
+
+// "Net realized vs market" synthesis line — deferred until its formula is agreed.
+const SCU_SYNTHESIS_ENABLED = false;
 
 export interface SessionReportArgs {
   session_id?: string;
@@ -42,6 +46,79 @@ function pickCheapestByFamily(basket: ModelPrice[]): ModelPrice[] {
   );
 }
 
+export interface ScuPositionArgs {
+  scu: ScuValue;
+  effective_usd: number | null;
+  nominal_usd: number | null;
+  price: ModelPrice | null;
+  synthesis?: boolean;
+}
+
+// SCU-denominated position block; each line is gated on its data, market reference always renders.
+function buildScuPosition(a: ScuPositionArgs): string[] {
+  const { scu, effective_usd, nominal_usd, price } = a;
+  const scuUsd = scu.scuUsd;
+
+  const rows: Array<[label: string, value: string]> = [];
+
+  // Session size: effective is the normal path; nominal is the tagged fallback if cache pricing is absent.
+  const basis =
+    effective_usd !== null
+      ? { usd: effective_usd, label: "effective" }
+      : nominal_usd !== null
+        ? { usd: nominal_usd, label: "nominal" }
+        : null;
+  if (basis) {
+    rows.push([
+      "Session size:",
+      `${scuAmount(basis.usd / scuUsd)} SCU   (${money(basis.usd)} ${basis.label} · ${scuPrice(scuUsd)} / SCU)`,
+    ]);
+  }
+
+  // list-to-list × index, joined by family; stamped so a basket reconstitution isn't mistaken for drift.
+  const rep = price
+    ? scu.familyRepresentatives.find((f) => f.family === price.family) ?? null
+    : null;
+  if (price && rep) {
+    const idx = rep.blendedCostUsd / scuUsd;
+    const date = scu.updatedAt ? scu.updatedAt.slice(0, 10) : "";
+    const stamp = `@ SCU ${scuPrice(scuUsd)}${date ? ` · ${date}` : ""}`;
+    rows.push([
+      `Your model (${price.display_name}):`,
+      `${idx.toFixed(1)}× index   (list-to-list: model blended ÷ SCU index)  ${stamp}`,
+    ]);
+  }
+
+  // Market reference (always renders); "geo-mean" is the v1 descriptor, other versions stay neutral.
+  const meanWord = scu.methodologyVersion === 1 ? "geo-mean" : "blend";
+  rows.push([
+    "Market reference:",
+    `SCU = ${scuPrice(scuUsd)} · ${meanWord} of ${scu.familyRepresentatives.length} model families`,
+  ]);
+
+  // Provisional, gated off until agreed: list × index discounted by the realized cache ratio.
+  if (
+    a.synthesis &&
+    rep &&
+    effective_usd !== null &&
+    nominal_usd !== null &&
+    nominal_usd > 0
+  ) {
+    const realized = (rep.blendedCostUsd / scuUsd) * (effective_usd / nominal_usd);
+    rows.push([
+      "Net realized:",
+      `${realized.toFixed(1)}× index   (list × index after your cache discount)`,
+    ]);
+  }
+
+  const width = Math.max(...rows.map(([l]) => l.length));
+  const out = ["SCU position"];
+  for (const [label, value] of rows) {
+    out.push(`  ${label.padEnd(width)}  ${value}`);
+  }
+  return out;
+}
+
 export async function renderSessionReport(
   args: SessionReportArgs,
 ): Promise<string> {
@@ -64,6 +141,14 @@ export async function renderSessionReport(
   const normalized = resolveCanonicalIn(usage.model, basket);
   const methodologyVersion = await getActiveMethodologyVersion();
 
+  // Separate endpoint from the basket — on failure just omit the block, don't sink the report.
+  let scu: ScuValue | null = null;
+  try {
+    scu = await getScuValue();
+  } catch {
+    scu = null;
+  }
+
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
 
@@ -71,11 +156,12 @@ export async function renderSessionReport(
   let nominal_usd: number | null = null;
   let cacheNote = "";
   let cachePricingMissing: OracleCachePricingMissingError | null = null;
+  let sessionPrice: ModelPrice | null = null;
   if (normalized) {
-    const price = basket.find((p) => p.model === normalized) ?? null;
-    if (price) {
+    sessionPrice = basket.find((p) => p.model === normalized) ?? null;
+    if (sessionPrice) {
       const r = priceSession(
-        price,
+        sessionPrice,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
@@ -161,6 +247,18 @@ export async function renderSessionReport(
     L.push("Cost (this session):");
     L.push("  Current model not tracked by oracle — effective cost unavailable.");
   }
+  if (scu) {
+    L.push("");
+    for (const l of buildScuPosition({
+      scu,
+      effective_usd,
+      nominal_usd,
+      price: sessionPrice,
+      synthesis: SCU_SYNTHESIS_ENABLED,
+    })) {
+      L.push(l);
+    }
+  }
   L.push("");
   L.push("Same shape on alternatives (cheapest representative per family, nominal):");
   for (const p of counterfactual) L.push(`  ${fmtCounterfactualRow(p)}`);
@@ -220,4 +318,5 @@ function renderOracleUnreachable(
 
 export const _internals = {
   pickCheapestByFamily,
+  buildScuPosition,
 };
