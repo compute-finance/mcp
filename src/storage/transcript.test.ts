@@ -1,10 +1,10 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parseTranscript } from "./transcript.js";
+import { parseTranscript, listProjectDirs } from "./transcript.js";
 import { summarizeSession } from "./session.js";
 import { analyzeInferences } from "./inferences.js";
 
@@ -198,6 +198,27 @@ describe("summarizeSession", () => {
     assert.equal(u.cache_read_tokens, 0 + 4000 + 4200 + 4400 + 4600);
     assert.equal(u.cache_creation_tokens, 5000);
     assert.equal(u.output_tokens, 50 + 30 + 40 + 60 + 250);
+  });
+});
+
+describe("listProjectDirs", () => {
+  it("SHOULD skip non-directory entries (e.g. macOS .DS_Store) without throwing ENOTDIR", () => {
+    const root = mkdtempSync(join(tmpdir(), "cf-mcp-projects-"));
+    try {
+      // The exact shape that crashed the session report: a stray file alongside project dirs.
+      writeFileSync(join(root, ".DS_Store"), "junk");
+      mkdirSync(join(root, "-Users-me-dev-proj-a"));
+      mkdirSync(join(root, "-Users-me-dev-proj-b"));
+
+      const dirs = listProjectDirs(root); // must not throw
+      const set = new Set(dirs);
+      assert.ok(!set.has(".DS_Store"), "the file must be filtered out, not iterated as a dir");
+      assert.ok(set.has("-Users-me-dev-proj-a"));
+      assert.ok(set.has("-Users-me-dev-proj-b"));
+      assert.equal(dirs.length, 2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
