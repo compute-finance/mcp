@@ -40,3 +40,17 @@ export interface OracleCacheBlock {
   cacheWrite5m: OracleCacheComponentWire | null;
   cacheWrite1h: OracleCacheComponentWire | null;
 }
+
+export type PriceSource = "oracle-basket" | "oracle-catalog" | "off-basket";
+
+export interface ResolvedModel {
+  input_key: string;
+  resolved_key: string;
+  family: string | null;
+  provider: { key: string; name: string } | null;
+  input_usd_per_million: number | null;
+  output_usd_per_million: number | null;
+  cache: CachePricing | null;
+  in_basket: boolean;
+  price_source: PriceSource;
+}

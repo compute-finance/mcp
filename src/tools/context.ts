@@ -1,7 +1,7 @@
 import {
-  getBasketPrices,
   priceSession,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
 import {
   findLatestSessionFile,
@@ -30,11 +30,11 @@ export async function getSessionContext(): Promise<SessionContext | null> {
     const usage = summarizeSession(transcript);
     if (usage.prompts < 1) return null;
 
-    const basket = await getBasketPrices();
-    const normalized = resolveCanonicalIn(usage.model, basket);
-    const price = normalized
-      ? (basket.find((p) => p.model === normalized) ?? null)
-      : null;
+    const resolved = await resolveModel(usage.model);
+    const price =
+      resolved && resolved.price_source !== "off-basket"
+        ? resolvedToModelPrice(resolved)
+        : null;
 
     let cost_so_far = 0;
     if (price) {

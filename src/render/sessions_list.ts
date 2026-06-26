@@ -4,11 +4,10 @@ import { join } from "node:path";
 import { parseSessionUsage } from "../storage/session.js";
 import { encodeCwd } from "../storage/tools.js";
 import {
-  getBasketPrices,
   priceSession,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
-import { ModelPrice } from "../oracle/types.js";
 import { money, tokens, pad, round } from "./format.js";
 
 export interface ActiveSessionsArgs {
@@ -67,26 +66,30 @@ export async function renderActiveSessions(
   let totalEff = 0;
   let totalNom = 0;
   let cacheMissingSessions = 0;
+  let offBasketSessions = 0;
 
-  // Single fetch up front; in-loop .find() reuses the hot cache (avoids N awaits, degrades to empty on oracle down).
-  let basket: ModelPrice[];
-  try {
-    basket = await getBasketPrices();
-  } catch {
-    basket = [];
-  }
+  const rows = await Promise.all(
+    files.map(async (f) => {
+      let usage;
+      try {
+        usage = parseSessionUsage(f.path);
+      } catch {
+        return null;
+      }
+      const resolved = await resolveModel(usage.model);
+      return { f, usage, resolved };
+    }),
+  );
 
-  for (const f of files) {
-    let usage;
-    try {
-      usage = parseSessionUsage(f.path);
-    } catch {
-      continue;
-    }
-    const normalized = resolveCanonicalIn(usage.model, basket);
-    const price = normalized
-      ? (basket.find((m) => m.model === normalized) ?? null)
-      : null;
+  for (const row of rows) {
+    if (!row) continue;
+    const { f, usage, resolved } = row;
+    const normalized =
+      resolved && resolved.price_source !== "off-basket"
+        ? resolved.resolved_key
+        : null;
+    const price =
+      resolved && normalized ? resolvedToModelPrice(resolved) : null;
     let eff: number | null = null;
     let nom: number | null = null;
     if (price) {
@@ -105,6 +108,8 @@ export async function renderActiveSessions(
       } else {
         cacheMissingSessions += 1;
       }
+    } else {
+      offBasketSessions += 1;
     }
     const totalIn =
       usage.raw_input_tokens +
@@ -126,6 +131,11 @@ export async function renderActiveSessions(
   } else {
     L.push(
       `Across ${files.length} sessions: ${money(round(totalNom, 4))} nominal · effective unavailable for ${cacheMissingSessions} session(s) (oracle has not published cache pricing for the model)`,
+    );
+  }
+  if (offBasketSessions > 0) {
+    L.push(
+      `${offBasketSessions} session${offBasketSessions === 1 ? "" : "s"} outside SCU coverage (off-basket model, excluded from totals).`,
     );
   }
   return L.join("\n");

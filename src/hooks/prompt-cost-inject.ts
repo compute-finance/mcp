@@ -8,12 +8,11 @@ import {
   UsageTotals,
 } from "../storage/session.js";
 import {
-  getBasketPrices,
   getScu,
   priceSession,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
-import { initFieldMap } from "../oracle/field-map.js";
 import { classifyProfile } from "../storage/profile.js";
 import { logSession } from "../storage/history.js";
 import { detectSubscription } from "../storage/subscription.js";
@@ -75,14 +74,15 @@ let nominal_usd: number | null = null;
 let normalized: string | null = null;
 
 try {
-  await initFieldMap();
-  const basket = await getBasketPrices();
-  normalized = resolveCanonicalIn(usage.model, basket);
+  const resolved = await resolveModel(usage.model);
+  normalized =
+    resolved && resolved.price_source !== "off-basket"
+      ? resolved.resolved_key
+      : null;
   const subscription = detectSubscription().isSubscription;
 
-  if (normalized) {
-    const price = basket.find((p) => p.model === normalized) ?? null;
-    if (!price) process.exit(0);
+  if (normalized && resolved) {
+    const price = resolvedToModelPrice(resolved);
     const r = priceSession(
       price,
       usage.raw_input_tokens,

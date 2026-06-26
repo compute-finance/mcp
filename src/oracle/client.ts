@@ -4,6 +4,8 @@ import {
   ModelPrice,
   OracleCacheBlock,
   OracleCacheComponentWire,
+  PriceSource,
+  ResolvedModel,
 } from "./types.js";
 import { getFieldMap } from "./field-map.js";
 
@@ -21,8 +23,6 @@ let reconstitutionsCache: CacheEntry<unknown> | null = null;
 let methodologyCache: CacheEntry<unknown> | null = null;
 let basketCache: CacheEntry<ModelPrice[]> | null = null;
 const familyDriftWarned = new Set<string>();
-// WeakMap, not Map: the canonical-id Set is GC'd with its basket array — no leak across refreshes.
-const idsByBasket = new WeakMap<ModelPrice[], Set<string>>();
 
 async function fetchJson(path: string): Promise<unknown> {
   const res = await fetch(`${API_BASE}${path}`);
@@ -288,64 +288,73 @@ export async function getModelPrice(model: string): Promise<ModelPrice | null> {
   return all.find((m) => m.model === model) ?? null;
 }
 
-function canonicalizeIn(raw: string, ids: Set<string>): string | null {
-  if (ids.has(raw)) return raw;
-  const stripped = raw.replace(/\[[^\]]+\]/g, "").replace(/-\d{8,}$/, "");
-  if (ids.has(stripped)) return stripped;
-  let dotNormalized = stripped;
-  for (let i = 1; i < stripped.length - 1; i++) {
-    if (
-      stripped[i] === "-" &&
-      /\d/.test(stripped[i - 1]) &&
-      /\d/.test(stripped[i + 1])
-    ) {
-      const candidate = stripped.slice(0, i) + "." + stripped.slice(i + 1);
-      if (ids.has(candidate)) return candidate;
-      dotNormalized = candidate;
-    }
-  }
-  const familyMatch = dotNormalized.match(/^(.+?)-(\d+(?:\.\d+)?)$/);
-  if (familyMatch) {
-    const family = familyMatch[1];
-    const version = parseFloat(familyMatch[2]);
-    let best: string | null = null;
-    let bestDist = Infinity;
-    for (const id of ids) {
-      const m = id.match(/^(.+?)-(\d+(?:\.\d+)?)$/);
-      if (m && m[1] === family) {
-        const dist = Math.abs(parseFloat(m[2]) - version);
-        if (dist < bestDist) { bestDist = dist; best = id; }
-      }
-    }
-    if (best) return best;
-  }
-  return null;
+interface WireResolveResponse {
+  inputKey: string;
+  resolvedKey: string;
+  family: string | null;
+  provider: { key: string; name: string } | null;
+  prices: { inputUsdPerMillion: number; outputUsdPerMillion: number } | null;
+  cache: OracleCacheBlock | null;
+  inBasket: boolean;
+  priceSource: PriceSource;
 }
 
-export function resolveCanonicalIn(
-  raw: string | null | undefined,
-  basket: ModelPrice[],
-): string | null {
-  if (!raw) return null;
-  let ids = idsByBasket.get(basket);
-  if (!ids) {
-    ids = new Set(basket.map((b) => b.model));
-    idsByBasket.set(basket, ids);
-  }
-  return canonicalizeIn(raw, ids);
+const resolveCache = new Map<string, CacheEntry<ResolvedModel>>();
+
+function adaptResolved(wire: WireResolveResponse): ResolvedModel {
+  const inputUsd = wire.prices?.inputUsdPerMillion ?? 0;
+  return {
+    input_key: wire.inputKey,
+    resolved_key: wire.resolvedKey,
+    family: wire.family,
+    provider: wire.provider,
+    input_usd_per_million: wire.prices?.inputUsdPerMillion ?? null,
+    output_usd_per_million: wire.prices?.outputUsdPerMillion ?? null,
+    cache: adaptCache(wire.resolvedKey, inputUsd, wire.cache),
+    in_basket: wire.inBasket,
+    price_source: wire.priceSource,
+  };
 }
 
-export async function resolveCanonical(
-  raw: string | null | undefined,
-): Promise<string | null> {
-  if (!raw) return null;
-  let basket: ModelPrice[];
+export async function resolveModel(
+  name: string | null | undefined,
+): Promise<ResolvedModel | null> {
+  if (!name) return null;
+  const cached = resolveCache.get(name);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
+  }
   try {
-    basket = await getBasketPrices();
+    const wire = (await fetchJson(
+      `/v1/oracle/resolve/${encodeURIComponent(name)}`,
+    )) as WireResolveResponse;
+    const adapted = adaptResolved(wire);
+    resolveCache.set(name, { data: adapted, fetchedAt: Date.now() });
+    return adapted;
   } catch {
     return null;
   }
-  return resolveCanonicalIn(raw, basket);
+}
+
+export function _resetResolveCache(): void {
+  resolveCache.clear();
+}
+
+export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
+  return {
+    model: r.resolved_key,
+    display_name: r.resolved_key,
+    provider: r.provider?.key ?? "",
+    provider_name: r.provider?.name ?? "",
+    family: r.family ?? "",
+    integrated: r.in_basket,
+    released_at: null,
+    input_usd_per_million: r.input_usd_per_million ?? 0,
+    output_usd_per_million: r.output_usd_per_million ?? 0,
+    input_wei_per_million: 0,
+    output_wei_per_million: 0,
+    cache: r.cache,
+  };
 }
 
 export function costUsd(
@@ -479,5 +488,4 @@ export function priceSession(
 export const _internals = {
   adaptComponent,
   adaptCache,
-  buildAttributionNotes,
 };
