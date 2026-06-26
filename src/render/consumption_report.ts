@@ -16,16 +16,8 @@ import {
   logInferences,
   LoggedInference,
 } from "../storage/inferences.js";
-import {
-  bar,
-  money,
-  tokens,
-  renderTokensBlock,
-  pad,
-  line,
-  round,
-  duration,
-} from "./format.js";
+import { bar, money, tokens, pad, line, round, duration } from "./format.js";
+import { renderTokensBlock } from "./blocks/tokens.js";
 
 export interface ConsumptionReportArgs {
   session_id?: string;

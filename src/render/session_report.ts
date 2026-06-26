@@ -16,12 +16,11 @@ import {
 import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
 import { ModelPrice } from "../oracle/types.js";
-import { money, renderTokensBlock, line, round } from "./format.js";
-import {
-  renderCostBlock,
-  renderHistoryBlock,
-  renderOverheadBlock,
-} from "./blocks.js";
+import { money, line, round } from "./format.js";
+import { renderCostBlock } from "./blocks/cost.js";
+import { renderHistoryBlock } from "./blocks/history.js";
+import { renderOverheadBlock } from "./blocks/overhead.js";
+import { renderTokensBlock } from "./blocks/tokens.js";
 
 export interface SessionReportArgs {
   session_id?: string;
