@@ -5,7 +5,8 @@ import {
   priceSession,
   OracleCachePricingMissingError,
   costUsd,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
 import {
   findSessionFile,
@@ -66,8 +67,14 @@ export async function renderSessionReport(
     return renderOracleUnreachable(usage, profile, err as Error);
   }
 
-  const normalized = resolveCanonicalIn(usage.model, basket);
-  const methodologyVersion = await getActiveMethodologyVersion();
+  const [methodologyVersion, resolved] = await Promise.all([
+    getActiveMethodologyVersion(),
+    resolveModel(usage.model),
+  ]);
+  const normalized =
+    resolved && resolved.price_source !== "off-basket"
+      ? resolved.resolved_key
+      : null;
 
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
@@ -77,9 +84,9 @@ export async function renderSessionReport(
   let cacheNote = "";
   let cachePricingMissing: OracleCachePricingMissingError | null = null;
   let cached_input_usd_per_million = 0;
-  if (normalized) {
-    const price = basket.find((p) => p.model === normalized) ?? null;
-    if (price) {
+  if (normalized && resolved) {
+    const price = resolvedToModelPrice(resolved);
+    {
       cached_input_usd_per_million =
         price.cache?.cachedInput?.usdPerMillion ?? 0;
       const r = priceSession(
@@ -115,7 +122,7 @@ export async function renderSessionReport(
   logSession({
     session_id: usage.session_id,
     model: normalized,
-    in_basket: normalized !== null,
+    in_basket: resolved?.in_basket ?? false,
     profile,
     raw_input_tokens: usage.raw_input_tokens,
     cache_read_tokens: usage.cache_read_tokens,

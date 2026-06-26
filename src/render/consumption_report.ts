@@ -1,10 +1,9 @@
 import {
-  getBasketPrices,
   priceSession,
   OracleCachePricingMissingError,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
-import { ModelPrice } from "../oracle/types.js";
 import {
   findSessionFile,
   findLatestSessionFile,
@@ -43,16 +42,12 @@ export async function renderConsumptionReport(
   const analysis = analyzeInferences(transcript);
   const summary = summarizeSession(transcript);
 
-  let basket: ModelPrice[];
-  try {
-    basket = await getBasketPrices();
-  } catch {
-    basket = [];
-  }
-  const normalized = resolveCanonicalIn(analysis.model, basket);
-  const price = normalized
-    ? (basket.find((p) => p.model === normalized) ?? null)
-    : null;
+  const resolved = await resolveModel(analysis.model);
+  const normalized =
+    resolved && resolved.price_source !== "off-basket"
+      ? resolved.resolved_key
+      : null;
+  const price = resolved && normalized ? resolvedToModelPrice(resolved) : null;
 
   const cacheState: {
     missingCount: number;

@@ -4,7 +4,8 @@ import {
   costUsd,
   priceSession,
   OracleCachePricingMissingError,
-  resolveCanonicalIn,
+  resolveModel,
+  resolvedToModelPrice,
 } from "../oracle/client.js";
 import {
   findSessionFile,
@@ -47,11 +48,16 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   const path = pathOrError as string;
 
   const usage = parseSessionUsage(path);
-  const [basket, methodologyVersion] = await Promise.all([
+  const [basket, methodologyVersion, resolved] = await Promise.all([
     getBasketPrices(),
     getActiveMethodologyVersion(),
+    resolveModel(usage.model),
   ]);
-  const normalized = resolveCanonicalIn(usage.model, basket);
+  const inBasket = resolved?.in_basket ?? false;
+  const normalized =
+    resolved && resolved.price_source !== "off-basket"
+      ? resolved.resolved_key
+      : null;
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
   const counterfactual = basket
@@ -67,7 +73,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   let effective_usd: number | null = null;
   let nominal_usd: number | null = null;
   if (normalized) {
-    const price = basket.find((p) => p.model === normalized) ?? null;
+    const price = resolved ? resolvedToModelPrice(resolved) : null;
     if (price) {
       const r = priceSession(
         price,
@@ -117,7 +123,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   logSession({
     session_id: usage.session_id,
     model: normalized,
-    in_basket: normalized !== null,
+    in_basket: inBasket,
     profile: prof.profile,
     raw_input_tokens: usage.raw_input_tokens,
     cache_read_tokens: usage.cache_read_tokens,
@@ -140,7 +146,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
       cwd: usage.cwd,
       model_raw: usage.model,
       model_normalized: normalized,
-      in_basket: normalized !== null,
+      in_basket: inBasket,
     },
     usage: {
       raw_input_tokens: usage.raw_input_tokens,
@@ -169,11 +175,12 @@ export async function rawAnalyzeInferences(a: Record<string, unknown>) {
 
   const transcript = parseTranscript(path);
   const result = analyzeInferences(transcript);
-  const basket = await getBasketPrices();
-  const normalized = resolveCanonicalIn(result.model, basket);
-  const price = normalized
-    ? (basket.find((p) => p.model === normalized) ?? null)
-    : null;
+  const resolved = await resolveModel(result.model);
+  const normalized =
+    resolved && resolved.price_source !== "off-basket"
+      ? resolved.resolved_key
+      : null;
+  const price = resolved && normalized ? resolvedToModelPrice(resolved) : null;
   const inferencesWithCost = result.inferences.map((inf) => {
     let effective_usd: number | null = null;
     let nominal_usd: number | null = null;
