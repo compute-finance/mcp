@@ -15,7 +15,7 @@ import {
 import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
 import { ModelPrice } from "../oracle/types.js";
-import { money, tokens, line, round } from "./format.js";
+import { money, renderTokensBlock, line, round } from "./format.js";
 
 export interface SessionReportArgs {
   session_id?: string;
@@ -135,10 +135,7 @@ export async function renderSessionReport(
     ),
   );
   L.push("");
-  L.push("Tokens:");
-  L.push(
-    `  Input ${tokens(usage.raw_input_tokens)} raw · ${tokens(usage.cache_read_tokens)} cache-read · ${tokens(usage.cache_creation_tokens)} cache-create · ${tokens(usage.output_tokens)} output`,
-  );
+  L.push(...renderTokensBlock(usage, usage.inferences));
   L.push(
     `  ${usage.prompts} prompts · ${usage.inferences} inferences · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
   );
@@ -204,10 +201,7 @@ function renderOracleUnreachable(
   L.push("");
   L.push(`Session: ${usage.session_id}  ·  Model: ${usage.model ?? "unknown"}`);
   L.push("");
-  L.push("Tokens:");
-  L.push(
-    `  Input ${tokens(usage.raw_input_tokens)} raw · ${tokens(usage.cache_read_tokens)} cache-read · ${tokens(usage.cache_creation_tokens)} cache-create · ${tokens(usage.output_tokens)} output`,
-  );
+  L.push(...renderTokensBlock(usage, usage.inferences));
   L.push(
     `  ${usage.prompts} prompts · ${usage.inferences} inferences · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
   );
