@@ -16,6 +16,7 @@ import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
 import { ModelPrice } from "../oracle/types.js";
 import { money, renderTokensBlock, line, round } from "./format.js";
+import { renderCostBlock, renderHistoryBlock } from "./blocks.js";
 
 export interface SessionReportArgs {
   session_id?: string;
@@ -91,7 +92,9 @@ export async function renderSessionReport(
     }
   }
 
-  const log = logSession({
+  const stats = await getStats(basket, usage.session_id);
+
+  logSession({
     session_id: usage.session_id,
     model: normalized,
     in_basket: normalized !== null,
@@ -110,9 +113,6 @@ export async function renderSessionReport(
     nominal_usd,
     out_in_ratio,
   });
-  void log;
-
-  const stats = await getStats(basket);
 
   const counterfactual = pickCheapestByFamily(basket);
 
@@ -140,43 +140,29 @@ export async function renderSessionReport(
     `  ${usage.prompts} prompts · ${usage.inferences} inferences · ${usage.tool_calls} tool calls · ${usage.edits} edits · ${usage.reads} reads · thinking ${usage.extended_thinking_used ? "yes" : "no"}`,
   );
   L.push("");
-  if (effective_usd !== null && nominal_usd !== null) {
-    L.push("Cost (this session):");
-    L.push(`  Effective (cache-aware):  ${money(effective_usd)}`);
-    L.push(`  Nominal (no cache):       ${money(nominal_usd)}`);
-    L.push(
-      `  Saved by caching:         ${money(round(nominal_usd - effective_usd, 4))}`,
-    );
-    if (cacheNote) L.push(`  ${cacheNote}`);
-  } else if (cachePricingMissing !== null && nominal_usd !== null) {
-    L.push("Cost (this session):");
-    L.push(`  Nominal (no cache discount):  ${money(nominal_usd)}`);
-    L.push(
-      `  Effective (cache-aware):      unavailable — oracle has not published ${cachePricingMissing.missing} pricing for ${cachePricingMissing.model}`,
-    );
-  } else {
-    L.push("Cost (this session):");
-    L.push("  Current model not tracked by oracle — effective cost unavailable.");
-  }
+  L.push(
+    ...renderCostBlock({
+      effective_usd,
+      nominal_usd,
+      cache_note: cacheNote,
+      cache_pricing_missing: cachePricingMissing
+        ? {
+            model: cachePricingMissing.model,
+            missing: cachePricingMissing.missing,
+          }
+        : null,
+    }),
+  );
   L.push("");
   L.push("Same shape on alternatives (cheapest representative per family, nominal):");
   for (const p of counterfactual) L.push(`  ${fmtCounterfactualRow(p)}`);
   L.push("");
   L.push(`Profile: ${profile}`);
 
-  if (stats.sample_size >= 3) {
-    const prof = stats.by_profile[profile];
+  const historyLines = renderHistoryBlock({ stats, profile, effective_usd });
+  if (historyLines.length > 0) {
     L.push("");
-    L.push(
-      `Your history (n=${stats.distinct_sessions} sessions · ${money(stats.cumulative_effective_usd)} effective cumulative, ${money(stats.cumulative_nominal_usd)} nominal):`,
-    );
-    if (prof && prof.median_effective_usd > 0 && effective_usd !== null) {
-      const ratio = effective_usd / prof.median_effective_usd - 1;
-      const direction = ratio >= 0 ? "above" : "below";
-      L.push(
-        `  This profile (${profile}): median ${money(prof.median_effective_usd)}  ·  this session ${money(effective_usd)}  →  ${Math.abs(Math.round(ratio * 100))}% ${direction} typical`,
-      );
-    }
+    L.push(...historyLines);
   }
 
   for (const ins of stats.insights) {
