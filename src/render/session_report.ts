@@ -1,7 +1,7 @@
 import {
   getBasketPrices,
   getActiveMethodologyVersion,
-  getScu,
+  getScuValue,
   priceSession,
   OracleCachePricingMissingError,
   costUsd,
@@ -16,12 +16,15 @@ import {
 } from "../storage/session.js";
 import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
-import { ModelPrice } from "../oracle/types.js";
-import { money, line, round } from "./format.js";
+import { ModelPrice, ScuValue } from "../oracle/types.js";
+import { money, line, round, scuAmount, scuPrice } from "./format.js";
 import { renderCostBlock } from "./blocks/cost.js";
 import { renderHistoryBlock } from "./blocks/history.js";
 import { renderOverheadBlock } from "./blocks/overhead.js";
 import { renderTokensBlock } from "./blocks/tokens.js";
+
+// "Net realized vs market" synthesis line — deferred until its formula is agreed.
+const SCU_SYNTHESIS_ENABLED = false;
 
 export interface SessionReportArgs {
   session_id?: string;
@@ -46,6 +49,79 @@ function pickCheapestByFamily(basket: ModelPrice[]): ModelPrice[] {
       a.input_usd_per_million + a.output_usd_per_million -
       (b.input_usd_per_million + b.output_usd_per_million),
   );
+}
+
+export interface ScuPositionArgs {
+  scu: ScuValue;
+  effective_usd: number | null;
+  nominal_usd: number | null;
+  price: ModelPrice | null;
+  synthesis?: boolean;
+}
+
+// SCU-denominated position block; each line is gated on its data, market reference always renders.
+function buildScuPosition(a: ScuPositionArgs): string[] {
+  const { scu, effective_usd, nominal_usd, price } = a;
+  const scuUsd = scu.scuUsd;
+
+  const rows: Array<[label: string, value: string]> = [];
+
+  // Session size: effective is the normal path; nominal is the tagged fallback if cache pricing is absent.
+  const basis =
+    effective_usd !== null
+      ? { usd: effective_usd, label: "effective" }
+      : nominal_usd !== null
+        ? { usd: nominal_usd, label: "nominal" }
+        : null;
+  if (basis) {
+    rows.push([
+      "Session size:",
+      `${scuAmount(basis.usd / scuUsd)} SCU   (${money(basis.usd)} ${basis.label} · ${scuPrice(scuUsd)} / SCU)`,
+    ]);
+  }
+
+  // list-to-list × index, joined by family; stamped so a basket reconstitution isn't mistaken for drift.
+  const rep = price
+    ? scu.familyRepresentatives.find((f) => f.family === price.family) ?? null
+    : null;
+  if (price && rep) {
+    const idx = rep.blendedCostUsd / scuUsd;
+    const date = scu.updatedAt ? scu.updatedAt.slice(0, 10) : "";
+    const stamp = `@ SCU ${scuPrice(scuUsd)}${date ? ` · ${date}` : ""}`;
+    rows.push([
+      `Your model (${price.display_name}):`,
+      `${idx.toFixed(1)}× index   (list-to-list: model blended ÷ SCU index)  ${stamp}`,
+    ]);
+  }
+
+  // Market reference (always renders); "geo-mean" is the v1 descriptor, other versions stay neutral.
+  const meanWord = scu.methodologyVersion === 1 ? "geo-mean" : "blend";
+  rows.push([
+    "Market reference:",
+    `SCU = ${scuPrice(scuUsd)} · ${meanWord} of ${scu.familyRepresentatives.length} model families`,
+  ]);
+
+  // Provisional, gated off until agreed: list × index discounted by the realized cache ratio.
+  if (
+    a.synthesis &&
+    rep &&
+    effective_usd !== null &&
+    nominal_usd !== null &&
+    nominal_usd > 0
+  ) {
+    const realized = (rep.blendedCostUsd / scuUsd) * (effective_usd / nominal_usd);
+    rows.push([
+      "Net realized:",
+      `${realized.toFixed(1)}× index   (list × index after your cache discount)`,
+    ]);
+  }
+
+  const width = Math.max(...rows.map(([l]) => l.length));
+  const out = ["SCU position"];
+  for (const [label, value] of rows) {
+    out.push(`  ${label.padEnd(width)}  ${value}`);
+  }
+  return out;
 }
 
 export async function renderSessionReport(
@@ -76,6 +152,15 @@ export async function renderSessionReport(
       ? resolved.resolved_key
       : null;
 
+  // Separate endpoint from the basket — on failure omit the SCU blocks, don't sink the report.
+  let scu: ScuValue | null = null;
+  try {
+    scu = await getScuValue();
+  } catch {
+    scu = null;
+  }
+  const scu_usd = scu?.scuUsd ?? 0;
+
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
 
@@ -83,14 +168,20 @@ export async function renderSessionReport(
   let nominal_usd: number | null = null;
   let cacheNote = "";
   let cachePricingMissing: OracleCachePricingMissingError | null = null;
+  let sessionPrice: ModelPrice | null = null;
   let cached_input_usd_per_million = 0;
   if (normalized && resolved) {
     const price = resolvedToModelPrice(resolved);
+    // resolve names a model by its key; prefer the basket's display name when the model is in-basket.
+    const basketRow = basket.find((p) => p.model === price.model);
+    sessionPrice = basketRow
+      ? { ...price, display_name: basketRow.display_name }
+      : price;
     {
       cached_input_usd_per_million =
-        price.cache?.cachedInput?.usdPerMillion ?? 0;
+        sessionPrice.cache?.cachedInput?.usdPerMillion ?? 0;
       const r = priceSession(
-        price,
+        sessionPrice,
         usage.raw_input_tokens,
         usage.cache_read_tokens,
         usage.cache_creation_tokens,
@@ -104,17 +195,6 @@ export async function renderSessionReport(
         cachePricingMissing = r.cache_pricing_missing;
       }
     }
-  }
-
-  let scu_usd = 0;
-  try {
-    const scu = (await getScu()) as Record<string, unknown> | null;
-    const raw = scu?.scuUsd;
-    const parsed =
-      typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    if (Number.isFinite(parsed) && parsed > 0) scu_usd = parsed;
-  } catch {
-    /* SCU fetch optional — overhead block stays hidden */
   }
 
   const stats = await getStats(basket, usage.session_id);
@@ -179,6 +259,19 @@ export async function renderSessionReport(
     }),
   );
 
+  if (scu) {
+    L.push("");
+    for (const l of buildScuPosition({
+      scu,
+      effective_usd,
+      nominal_usd,
+      price: sessionPrice,
+      synthesis: SCU_SYNTHESIS_ENABLED,
+    })) {
+      L.push(l);
+    }
+  }
+
   const overheadLines = renderOverheadBlock({
     fixed_overhead_tokens: usage.first_inference_cache_creation_tokens,
     inferences: usage.inferences,
@@ -237,4 +330,5 @@ function renderOracleUnreachable(
 
 export const _internals = {
   pickCheapestByFamily,
+  buildScuPosition,
 };

@@ -23,6 +23,19 @@ export function tokens(n: number): string {
   return String(n);
 }
 
+// Whole-SCU count with thousands separators (`21,500`) — report depth, vs tokens()' `21.5k`.
+export function scuAmount(n: number | null | undefined): string {
+  if (n === null || n === undefined || !isFinite(n)) return "—";
+  const rounded = Math.round(n);
+  return rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// 6 decimals — money()'s 4 would collapse the sub-cent SCU unit price.
+export function scuPrice(n: number | null | undefined): string {
+  if (n === null || n === undefined || !isFinite(n)) return "—";
+  return `$${n.toFixed(6)}`;
+}
+
 export function pad(s: string, width: number, align: "l" | "r" = "l"): string {
   if (s.length >= width) return s;
   const fill = " ".repeat(width - s.length);

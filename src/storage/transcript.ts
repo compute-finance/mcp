@@ -44,6 +44,17 @@ function projectsDir(): string {
   return join(homedir(), ".claude", "projects");
 }
 
+// Only subdirectories — a stray file (e.g. `.DS_Store`) would throw ENOTDIR on readdirSync.
+export function listProjectDirs(root: string): string[] {
+  return readdirSync(root).filter((d) => {
+    try {
+      return statSync(join(root, d)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function findSessionFile(
   session_id: string,
   cwd?: string,
@@ -55,7 +66,7 @@ export function findSessionFile(
     const candidate = join(root, encodeCwd(cwd), `${session_id}.jsonl`);
     if (existsSync(candidate)) return candidate;
   }
-  for (const proj of readdirSync(root)) {
+  for (const proj of listProjectDirs(root)) {
     const candidate = join(root, proj, `${session_id}.jsonl`);
     if (existsSync(candidate)) return candidate;
   }
@@ -65,11 +76,11 @@ export function findSessionFile(
 export function findLatestSessionFile(cwd?: string): string | null {
   const root = projectsDir();
   if (!existsSync(root)) return null;
-  const dirs = cwd ? [encodeCwd(cwd)] : readdirSync(root);
+  const dirs = cwd ? [encodeCwd(cwd)] : listProjectDirs(root);
   let best: { path: string; mtime: number } | null = null;
   for (const d of dirs) {
     const full = join(root, d);
-    if (!existsSync(full)) continue;
+    if (!existsSync(full) || !statSync(full).isDirectory()) continue;
     for (const f of readdirSync(full)) {
       if (!f.endsWith(".jsonl")) continue;
       const p = join(full, f);
