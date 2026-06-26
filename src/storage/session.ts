@@ -1,6 +1,3 @@
-// Three orthogonal counts derived from a Transcript. All reports read this
-// projection so their header triplet is identical by construction.
-
 import { EDIT_TOOLS, READ_TOOLS } from "./tools.js";
 import {
   parseTranscript,
@@ -24,6 +21,7 @@ export interface UsageTotals {
   cache_creation_tokens: number;
   cache_read_tokens: number;
   output_tokens: number;
+  first_inference_cache_creation_tokens: number;
   first_ts: string | null;
   last_ts: string | null;
 }
@@ -66,6 +64,8 @@ export function summarizeSession(t: Transcript): UsageTotals {
     cache_creation_tokens,
     cache_read_tokens,
     output_tokens,
+    first_inference_cache_creation_tokens:
+      t.inferences[0]?.cache_creation_tokens ?? 0,
     first_ts: t.first_ts,
     last_ts: t.last_ts,
   };
