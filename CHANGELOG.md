@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/compute-finance/mcp/compare/v0.4.0...v0.5.0) (2026-06-26)
+
+
+### Features
+
+* add an SCU position section to the session report ([#32](https://github.com/compute-finance/mcp/issues/32)) ([a4df944](https://github.com/compute-finance/mcp/commit/a4df944172f06169d5344700d2fde35ed81191bc))
+* lead prompt-submit hook with SCU and cache savings ([#27](https://github.com/compute-finance/mcp/issues/27)) ([4b11556](https://github.com/compute-finance/mcp/commit/4b11556a23bef7dd03eeadd24a3d55b0832ae0a8))
+* resolve models via oracle API and flag off-basket sessions ([#34](https://github.com/compute-finance/mcp/issues/34)) ([4fa0951](https://github.com/compute-finance/mcp/commit/4fa0951758c85a97518d0fed1e2a790a80bd271c))
+* show context overhead per inference in the session report ([#30](https://github.com/compute-finance/mcp/issues/30)) ([123fdc4](https://github.com/compute-finance/mcp/commit/123fdc4d240ad547d2439f19740554ea4f4aa0d2))
+* show four-way token split and context footprint in reports ([#28](https://github.com/compute-finance/mcp/issues/28)) ([17a985d](https://github.com/compute-finance/mcp/commit/17a985df9dc347e44c260ff9e251f75bb42d7111))
+* show model list prices as a × index ladder in the session report ([#33](https://github.com/compute-finance/mcp/issues/33)) ([195eb77](https://github.com/compute-finance/mcp/commit/195eb77ff931a92b2f4f22dfb1ef42a9ab7381d9))
+* show savings % and exclude current session from history median ([#29](https://github.com/compute-finance/mcp/issues/29)) ([cf5f9fb](https://github.com/compute-finance/mcp/commit/cf5f9fbefb22f8c3d3ca40407eefc403faccbd86))
+
+
+### Code Refactoring
+
+* split block helpers into per-concern modules ([#31](https://github.com/compute-finance/mcp/issues/31)) ([0cd76a4](https://github.com/compute-finance/mcp/commit/0cd76a4f5606e714ed5fe5dd12a746f8b6a7fa54))
+
 ## [0.4.0](https://github.com/compute-finance/mcp/compare/v0.3.0...v0.4.0) (2026-06-17)
 
 
