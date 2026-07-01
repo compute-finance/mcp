@@ -89,12 +89,10 @@ describe("toolDefinitions", () => {
     }
   });
 
-  it("SHOULD describe data_get_catalog with the indexMember and integrated flags — Bug guarded: agents must distinguish catalog-only from basket entries", () => {
+  it("SHOULD describe data_get_catalog with the indexMember flag — Bug guarded: agents must distinguish family representatives from other members", () => {
     const tool = toolDefinitions.find((t) => t.name === "data_get_catalog");
     assert.ok(tool);
     assert.ok(tool.description.includes("indexMember"));
-    assert.ok(tool.description.includes("integrated"));
-    assert.ok(tool.description.includes("pricing-only"));
   });
 
   it("SHOULD describe data_get_model_price_at with the discriminated source union — Bug guarded: agents must route on manifest vs providerCost source", () => {

@@ -29,7 +29,6 @@ function priceWithCache(cache: CachePricing | null): ModelPrice {
     provider: "anthropic",
     provider_name: "Anthropic",
     family: "anthropic.claude",
-    integrated: true,
     released_at: null,
     input_usd_per_million: 5,
     output_usd_per_million: 25,

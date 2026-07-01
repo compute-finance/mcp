@@ -103,7 +103,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_catalog",
     description:
-      "Full catalog of tracked models — every model with a recorded price, including non-index entries and pricing-only providers without SDK integration. Source: Oracle API (/v1/oracle/catalog). Each entry carries modelKey, displayName, provider, family, integrated flag (true if SDK-routable), indexMember flag (true if current family representative in the latest confirmed revision), currentPrice with input/output USD per million tokens and observedAt timestamp, and per-component cache/reasoning blocks. For basket-only display, use data_get_basket instead.",
+      "Full catalog of tracked models — every model with a recorded price, including non-index entries. Source: Oracle API (/v1/oracle/catalog). Each entry carries modelKey, displayName, provider, family, indexMember flag (true if current family representative in the latest confirmed revision), currentPrice with input/output USD per million tokens and observedAt timestamp, and per-component cache/reasoning blocks. For basket-only display, use data_get_basket instead.",
     inputSchema: FALLBACK_SCHEMAS.data_get_catalog,
     annotations: ORACLE,
   },

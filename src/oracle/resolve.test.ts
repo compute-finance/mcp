@@ -199,11 +199,6 @@ describe("resolvedToModelPrice", () => {
     assert.equal(p.model, r.resolved_key);
   });
 
-  it("SHOULD copy in_basket INTO integrated", () => {
-    assert.equal(resolvedToModelPrice(baseResolved({ in_basket: true })).integrated, true);
-    assert.equal(resolvedToModelPrice(baseResolved({ in_basket: false })).integrated, false);
-  });
-
   it("SHOULD coerce missing prices to zero FOR off-basket inputs", () => {
     const p = resolvedToModelPrice(
       baseResolved({ input_usd_per_million: null, output_usd_per_million: null }),

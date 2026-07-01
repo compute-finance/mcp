@@ -16,7 +16,6 @@ function mp(overrides: Partial<ModelPrice> & Pick<ModelPrice, "model" | "family"
     provider: "test",
     provider_name: "Test",
     family: overrides.family,
-    integrated: true,
     released_at: null,
     input_usd_per_million: 0,
     output_usd_per_million: 0,
