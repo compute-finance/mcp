@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/compute-finance/mcp/compare/v0.5.0...v0.6.0) (2026-07-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* drop `integrated` field from oracle basket and catalog outputs ([#36](https://github.com/compute-finance/mcp/issues/36))
+
+### Features
+
+* drop `integrated` field from oracle basket and catalog outputs ([#36](https://github.com/compute-finance/mcp/issues/36)) ([4d468a2](https://github.com/compute-finance/mcp/commit/4d468a2e5bc008f91d2529607c1d78e2a0eec53b))
+
 ## [0.5.0](https://github.com/compute-finance/mcp/compare/v0.4.0...v0.5.0) (2026-06-26)
 
 
