@@ -286,7 +286,6 @@ describe("smoke: data_get_catalog", () => {
     const first = models[0];
     assert.equal(typeof first.modelKey, "string");
     assert.equal(typeof first.displayName, "string");
-    assert.equal(typeof first.integrated, "boolean");
     assert.equal(typeof first.indexMember, "boolean");
     const cp = first.currentPrice as Record<string, unknown>;
     assert.ok(cp, "every catalog entry carries currentPrice");

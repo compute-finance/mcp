@@ -18,7 +18,6 @@ export interface ModelPrice {
   provider: string;
   provider_name: string;
   family: string;
-  integrated: boolean;
   released_at: string | null;
   input_usd_per_million: number;
   output_usd_per_million: number;
