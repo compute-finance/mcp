@@ -1,4 +1,4 @@
-import { money, tokens } from "../format.js";
+import { money } from "../format.js";
 
 export interface OverheadBlockInput {
   fixed_overhead_tokens: number;
@@ -28,13 +28,13 @@ export function renderOverheadBlock(input: OverheadBlockInput): string[] {
   const per_turn_scu = per_turn_usd / scu_usd;
   const total_scu = per_turn_scu * inferences;
   const total_usd = per_turn_usd * inferences;
-  const per_turn_scu_str =
-    per_turn_scu < 10
-      ? per_turn_scu.toFixed(1)
-      : Math.round(per_turn_scu).toLocaleString("en-US");
+  const formatScu = (n: number) =>
+    n < 10 ? n.toFixed(1) : Math.round(n).toLocaleString("en-US");
+  const per_turn_scu_str = formatScu(per_turn_scu);
+  const total_scu_str = formatScu(total_scu);
 
   return [
     `Context overhead — paid every inference (×${inferences} this session):`,
-    `  fixed overhead    ${per_turn_scu_str} SCU/turn  →  ×${inferences} = ${tokens(total_scu)} SCU (${money(total_usd)})`,
+    `  fixed overhead    ${per_turn_scu_str} SCU/turn  →  ×${inferences} = ${total_scu_str} SCU (${money(total_usd)})`,
   ];
 }
