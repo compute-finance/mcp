@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/compute-finance/mcp/compare/v0.6.0...v0.6.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* format overhead total in SCU units, not raw tokens ([#38](https://github.com/compute-finance/mcp/issues/38)) ([f33e075](https://github.com/compute-finance/mcp/commit/f33e075ea8dc5acf1ea52cf3fd75939afacd237d))
+
 ## [0.6.0](https://github.com/compute-finance/mcp/compare/v0.5.0...v0.6.0) (2026-07-02)
 
 
