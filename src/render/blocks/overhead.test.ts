@@ -78,6 +78,30 @@ describe("renderOverheadBlock", () => {
     assert.match(out[1], /\d\.\d SCU\/turn/);
   });
 
+  it("SHOULD render total with one decimal WHEN total_scu is below 10 — Bug guarded: a raw float total (e.g. 20.762938379045902) leaks into the headline for short sessions", () => {
+    const out = renderOverheadBlock(
+      overheadInput({
+        fixed_overhead_tokens: 1_500,
+        inferences: 8,
+        scu_usd: 0.002,
+        cached_input_usd_per_million: 0.3,
+      }),
+    );
+    assert.match(out[1], /= \d\.\d SCU/);
+  });
+
+  it("SHOULD render total as a comma-separated integer WHEN total_scu is 1000 or more", () => {
+    const out = renderOverheadBlock(
+      overheadInput({
+        fixed_overhead_tokens: 100_000,
+        inferences: 200,
+        scu_usd: 0.002,
+        cached_input_usd_per_million: 0.5,
+      }),
+    );
+    assert.match(out[1], /= \d,\d{3} SCU/);
+  });
+
   it("SHOULD render per-turn as a comma-separated integer WHEN above 10 SCU", () => {
     const out = renderOverheadBlock(
       overheadInput({
