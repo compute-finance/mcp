@@ -43,7 +43,9 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "npm run test:unit && npm run test:smoke",
+    "test:unit": "tsx --test \"src/hooks/**/*.test.ts\" \"src/oracle/**/*.test.ts\" \"src/render/**/*.test.ts\" \"src/storage/**/*.test.ts\" \"src/tools/**/*.test.ts\"",
+    "test:smoke": "tsx --test \"src/smoke.test.ts\"",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
