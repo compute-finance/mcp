@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/compute-finance/mcp/compare/v0.6.1...v0.6.2) (2026-07-08)
+
+
+### Tests
+
+* harden smoke against basket rotation and drop non-smoke checks ([#42](https://github.com/compute-finance/mcp/issues/42)) ([d91d2e5](https://github.com/compute-finance/mcp/commit/d91d2e5df127cb8cc02c6f0053faf3ba04b85270))
+
 ## [0.6.1](https://github.com/compute-finance/mcp/compare/v0.6.0...v0.6.1) (2026-07-06)
 
 
