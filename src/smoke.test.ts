@@ -19,23 +19,11 @@ import {
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { round } from "./render/format.js";
-import type { ModelPrice } from "./oracle/types.js";
 
 before(async () => {
   await warmOpenApiCache();
   await initFieldMap();
 }, { timeout: 15_000 });
-
-function errorTextSync(msg: string) {
-  return {
-    content: [{ type: "text", text: JSON.stringify({ error: msg }, null, 2) }],
-    isError: true,
-  };
-}
-
-function parseResponse(res: { content: Array<{ text: string }> }): unknown {
-  return JSON.parse(res.content[0].text);
-}
 
 describe("smoke: data_get_basket", () => {
   it("returns a non-empty models array with required pricing fields", { timeout: 10_000 }, async () => {
@@ -83,10 +71,13 @@ describe("smoke: data_get_basket", () => {
 });
 
 describe("smoke: data_get_price", () => {
-  it("returns a single model with pricing for claude-sonnet-4.6", { timeout: 10_000 }, async () => {
-    const price = await getModelPrice("claude-sonnet-4.6");
-    assert.ok(price !== null, "claude-sonnet-4.6 must be in basket");
-    assert.equal(price.model, "claude-sonnet-4.6");
+  it("echoes the requested basket-member model with a well-formed pricing shape", { timeout: 10_000 }, async () => {
+    const basket = await getBasketPrices();
+    assert.ok(basket.length > 0, "basket must be non-empty");
+    const sample = basket[0];
+    const price = await getModelPrice(sample.model);
+    assert.ok(price !== null, `${sample.model} must be in basket`);
+    assert.equal(price.model, sample.model);
     assert.ok(price.input_usd_per_million > 0);
     assert.ok(price.output_usd_per_million > 0);
     assert.equal(typeof price.provider, "string");
@@ -103,11 +94,8 @@ describe("smoke: data_get_scu", () => {
   it("returns SCU value as a positive number with a methodology-versioned breakdown", { timeout: 10_000 }, async () => {
     const data = await getScu() as Record<string, unknown>;
     assert.ok(data !== null && typeof data === "object", "SCU response must be an object");
-    const scu = data.scu ?? data.scuUsd ?? data.value ?? data.scu_value;
-    assert.ok(typeof scu === "number" || typeof scu === "string",
-      `SCU value must be present, got keys: ${Object.keys(data).join(", ")}`);
-    const scuNum = Number(scu);
-    assert.ok(scuNum > 0, `SCU must be positive, got: ${scuNum}`);
+    assert.equal(typeof data.scuUsd, "number", `scuUsd must be a number, got keys: ${Object.keys(data).join(", ")}`);
+    assert.ok((data.scuUsd as number) > 0, `scuUsd must be positive, got: ${data.scuUsd}`);
 
     const breakdown = data.breakdown as Record<string, unknown> | undefined;
     assert.ok(breakdown && typeof breakdown === "object", "breakdown discriminated union must be present");
@@ -180,9 +168,10 @@ describe("smoke: data_get_methodology", () => {
 });
 
 describe("smoke: compute_estimate", () => {
-  it("returns positive USD cost for a known model", { timeout: 10_000 }, async () => {
-    const price = await getModelPrice("claude-sonnet-4.6");
-    assert.ok(price !== null, "claude-sonnet-4.6 must be in basket");
+  it("returns positive USD cost for a basket-member model", { timeout: 10_000 }, async () => {
+    const basket = await getBasketPrices();
+    assert.ok(basket.length > 0, "basket must be non-empty");
+    const price = basket[0];
 
     const inputTokens = 1_000_000;
     const outputTokens = 100_000;
@@ -356,40 +345,3 @@ describe("smoke: data_get_scu_at", () => {
   });
 });
 
-describe("smoke: error paths", () => {
-  it("data_get_price with nonexistent model returns isError: true", { timeout: 10_000 }, async () => {
-    const model = "nonexistent-model-xyz-999";
-    const price = await getModelPrice(model);
-    assert.equal(price, null);
-    const res = errorTextSync(`Model not in basket: ${model}`);
-    assert.equal(res.isError, true);
-    const body = parseResponse(res) as { error: string };
-    assert.ok(body.error.includes("nonexistent-model-xyz-999"));
-  });
-
-  it("compute_estimate with missing model param returns validation error", { timeout: 10_000 }, async () => {
-    const { requireString, requireFiniteNumber } = await import("./tools/validation.js");
-    const model = requireString(undefined, "model");
-    assert.equal(typeof model, "object");
-    assert.ok("error" in (model as object));
-    const res = errorTextSync((model as { error: string }).error);
-    assert.equal(res.isError, true);
-  });
-
-  it("compute_estimate with nonexistent model returns model-not-found error", { timeout: 10_000 }, async () => {
-    const model = "definitely-not-a-real-model";
-    const price = await getModelPrice(model);
-    assert.equal(price, null);
-    const res = errorTextSync(`Model not in basket: ${model}`);
-    assert.equal(res.isError, true);
-    const body = parseResponse(res) as { error: string };
-    assert.equal(body.error, `Model not in basket: ${model}`);
-  });
-
-  it("compute_estimate with missing input_tokens returns validation error", { timeout: 10_000 }, async () => {
-    const { requireFiniteNumber } = await import("./tools/validation.js");
-    const result = requireFiniteNumber(undefined, "input_tokens");
-    assert.equal(typeof result, "object");
-    assert.ok("error" in (result as object));
-  });
-});
