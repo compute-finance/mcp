@@ -1,18 +1,3 @@
-/**
- * OpenAPI-derived MCP tool inputSchema
- *
- * Fetches the Oracle's OpenAPI spec at startup (with TTL-based cache) and
- * derives MCP tool inputSchema objects from operationId parameters. This
- * ensures the MCP tool schemas stay in sync with the Oracle API without
- * manual maintenance.
- *
- * Refresh strategy: boot-time fetch + cached with 1-hour TTL.
- * Failure mode: when the Oracle is unreachable, falls back to hardcoded
- * defaults so the MCP server always starts.
- *
- * @module
- */
-
 const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
 const OPENAPI_URL = `${API_BASE}/openapi.json`;
 // TTL enables re-use outside the one-shot MCP boot path (e.g. health-check,
@@ -69,142 +54,14 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 
-// ── Mapping: MCP tool name -> OpenAPI operationId ────────────────────
-//
-// Only oracle-backed tools are listed here. Local compute/render/analysis
-// tools have no oracle endpoint and keep their hardcoded schemas.
+// ── Static mappings ──────────────────────────────────────────────────
 
-const TOOL_TO_OPERATION: Record<string, string> = {
-  data_get_basket: "OraclePublicController_getBasket",
-  data_get_price: "OraclePublicController_getModel",
-  data_get_scu: "OraclePublicController_getScu",
-  data_get_breakdown: "OraclePublicController_getScu",
-  data_get_cpi: "OraclePublicController_getBasket",
-  data_get_reconstitutions: "OraclePublicController_getReconstitutions",
-  data_get_methodology: "MethodologyPublicController_getChangelog",
-  data_get_history: "OraclePublicController_getHistory",
-  data_get_model_price_history: "OraclePublicController_getModelPriceHistory",
-  data_get_catalog: "OraclePublicController_getCatalog",
-  data_get_model_price_at: "OraclePublicController_getModelPriceAt",
-  data_get_baseline: "OraclePublicController_getBaseline",
-  data_get_scu_at: "OraclePublicController_getScuAt",
-};
-
-// Used when the OpenAPI spec is unreachable; frozen as a safety net.
-export const FALLBACK_SCHEMAS: Record<string, JsonSchema> = {
-  data_get_basket: { type: "object", properties: {} },
-  data_get_price: {
-    type: "object",
-    properties: {
-      model: { type: "string", description: "Model name", examples: ["claude-sonnet-4.6"] },
-    },
-    required: ["model"],
-  },
-  data_get_scu: { type: "object", properties: {} },
-  data_get_breakdown: { type: "object", properties: {} },
-  data_get_cpi: { type: "object", properties: {} },
-  data_get_methodology: { type: "object", properties: {} },
-  data_get_reconstitutions: {
-    type: "object",
-    properties: {
-      limit: {
-        type: "number",
-        description: "Max events to return (most recent first). Defaults to all.",
-        examples: [5],
-      },
-    },
-  },
-  data_get_history: {
-    type: "object",
-    properties: {
-      from: {
-        type: "string",
-        description: "ISO 8601 start of range (inclusive). Defaults to genesis.",
-        examples: ["2026-04-01T00:00:00Z"],
-      },
-      to: {
-        type: "string",
-        description: "ISO 8601 end of range (inclusive). Defaults to now.",
-        examples: ["2026-06-01T00:00:00Z"],
-      },
-      granularity: {
-        type: "string",
-        enum: ["per-revision", "daily", "weekly"],
-        description:
-          "Bucketing granularity. per-revision emits one point per revision; daily/weekly buckets carry the last revision's value forward across empty buckets (step-function close). Defaults to per-revision.",
-      },
-      limit: {
-        type: "number",
-        description:
-          "Max points (cap 10000). Oldest are dropped first when capped; the response sets truncated: true.",
-      },
-    },
-  },
-  data_get_model_price_history: {
-    type: "object",
-    properties: {
-      model: {
-        type: "string",
-        description:
-          "Model pricing key (e.g. 'gpt-5.5'). Models that have never appeared in any confirmed revision return an error.",
-        examples: ["gpt-5.5"],
-      },
-      from: {
-        type: "string",
-        description: "ISO 8601 start of range (inclusive). Defaults to genesis.",
-        examples: ["2026-04-01T00:00:00Z"],
-      },
-      to: {
-        type: "string",
-        description: "ISO 8601 end of range (inclusive). Defaults to now.",
-        examples: ["2026-06-01T00:00:00Z"],
-      },
-      granularity: {
-        type: "string",
-        enum: ["per-revision", "daily", "weekly"],
-        description:
-          "Bucketing granularity. per-revision emits one point per revision the model appeared in; daily/weekly carry forward. Defaults to per-revision.",
-      },
-      limit: {
-        type: "number",
-        description: "Max points (cap 10000). Oldest are dropped first when capped.",
-      },
-    },
-    required: ["model"],
-  },
-  data_get_catalog: { type: "object", properties: {} },
-  data_get_baseline: { type: "object", properties: {} },
-  data_get_model_price_at: {
-    type: "object",
-    properties: {
-      model: {
-        type: "string",
-        description:
-          "Model pricing key (e.g. 'gpt-5.5'). Returns the price effective at the requested timestamp.",
-        examples: ["gpt-5.5"],
-      },
-      date: {
-        type: "string",
-        description:
-          "ISO 8601 timestamp (e.g. '2026-06-15T12:00:00Z'). Must not be in the future.",
-        examples: ["2026-06-15T12:00:00Z"],
-      },
-    },
-    required: ["model", "date"],
-  },
-  data_get_scu_at: {
-    type: "object",
-    properties: {
-      date: {
-        type: "string",
-        description:
-          "ISO 8601 timestamp (e.g. '2026-06-15T12:00:00Z'). Must not be in the future. Returns null when the timestamp precedes the genesis revision.",
-        examples: ["2026-06-15T12:00:00Z"],
-      },
-    },
-    required: ["date"],
-  },
-};
+import {
+  FALLBACK_SCHEMAS,
+  MCP_EXTRA_PROPERTIES,
+  PARAM_RENAMES,
+  TOOL_TO_OPERATION,
+} from "./openapi-schema-mappings.js";
 
 // ── Schema derivation ────────────────────────────────────────────────
 
@@ -337,17 +194,6 @@ function buildInputSchema(
   return schema;
 }
 
-// ── Parameter name remapping ─────────────────────────────────────────
-//
-// The OpenAPI spec names the path parameter `key` for `/v1/oracle/model/{key}`,
-// but the MCP tool handler expects `model`. This map handles that translation.
-
-const PARAM_RENAMES: Record<string, Record<string, string>> = {
-  data_get_price: { key: "model" },
-  data_get_model_price_history: { key: "model" },
-  data_get_model_price_at: { key: "model" },
-};
-
 /** Apply per-tool parameter renames to a derived schema. */
 function applyRenames(toolName: string, schema: JsonSchema): JsonSchema {
   const renames = PARAM_RENAMES[toolName];
@@ -371,37 +217,6 @@ function applyRenames(toolName: string, schema: JsonSchema): JsonSchema {
     ...(newReq && newReq.length > 0 ? { required: newReq } : {}),
   };
 }
-
-// ── MCP-specific schema overrides ────────────────────────────────────
-//
-// Some MCP tools add parameters that don't exist in the OpenAPI spec
-// (e.g. `data_get_reconstitutions` adds a `limit` param that's enforced
-// client-side, not by the Oracle). These are merged on top of the
-// OpenAPI-derived schema.
-
-const MCP_EXTRA_PROPERTIES: Record<string, Record<string, Record<string, unknown>>> = {
-  data_get_reconstitutions: {
-    limit: {
-      type: "number",
-      description: "Max events to return (most recent first). Defaults to all.",
-      examples: [5],
-    },
-  },
-  data_get_price: {
-    model: {
-      type: "string",
-      description: "Model name",
-      examples: ["claude-sonnet-4.6"],
-    },
-  },
-  data_get_model_price_history: {
-    model: {
-      type: "string",
-      description: "Model pricing key (e.g. 'gpt-5.5').",
-      examples: ["gpt-5.5"],
-    },
-  },
-};
 
 /** Merge MCP-only extra properties into a derived schema (per-property merge). */
 function applyMcpExtras(toolName: string, schema: JsonSchema): JsonSchema {
