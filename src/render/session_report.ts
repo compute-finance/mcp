@@ -16,11 +16,13 @@ import {
 import { logSession, getStats } from "../storage/history.js";
 import { classifyProfile } from "../storage/profile.js";
 import { ModelPrice, ScuValue } from "../oracle/types.js";
-import { money, line, round, scuAmount, scuPrice, multiple } from "./format.js";
+import { line, round } from "./format.js";
 import { renderCostBlock } from "./blocks/cost.js";
 import { renderHistoryBlock } from "./blocks/history.js";
 import { renderOverheadBlock } from "./blocks/overhead.js";
+import { renderScuPositionBlock } from "./blocks/scu_position.js";
 import { renderTokensBlock } from "./blocks/tokens.js";
+import { renderXIndexLadderBlock } from "./blocks/x_index_ladder.js";
 
 // "Net realized vs market" synthesis line — deferred until its formula is agreed.
 const SCU_SYNTHESIS_ENABLED = false;
@@ -28,174 +30,6 @@ const SCU_SYNTHESIS_ENABLED = false;
 export interface SessionReportArgs {
   session_id?: string;
   cwd?: string;
-}
-
-export interface XIndexLadderArgs {
-  scu: ScuValue;
-  basket: ModelPrice[];
-  // The session's current model (a basket family representative), or null when off-basket.
-  price: ModelPrice | null;
-}
-
-interface LadderRow {
-  provider_name: string;
-  display_name: string;
-  x_index: number;
-  is_current: boolean;
-}
-
-// "How many × cheaper per unit of work" — whole number from 3×, one decimal below (`5×`, `1.7×`).
-function cheaperFactor(ratio: number): string {
-  return `${ratio >= 3 ? ratio.toFixed(0) : ratio.toFixed(1)}×`;
-}
-
-// Each basket family's list price as × SCU on the fixed reference workload, framed relative to the
-// dev's current model. Grouped by provider, flagship (priciest) first; the dev's provider leads.
-// Blended costs come from the SCU breakdown (the same raw prices the index is built from) — NOT the
-// basket's marked-up prices, which would not reconcile with the index.
-function buildXIndexLadder(a: XIndexLadderArgs): string[] {
-  const { scu, basket, price } = a;
-  const scuUsd = scu.scuUsd;
-
-  // family is the shared key between the SCU breakdown and the basket (one model per family).
-  const basketByFamily = new Map(basket.map((b) => [b.family, b]));
-  const rows: LadderRow[] = [];
-  for (const rep of scu.familyRepresentatives) {
-    const bp = basketByFamily.get(rep.family);
-    if (!bp) continue; // representative without a basket row — skip rather than guess a label.
-    rows.push({
-      provider_name: bp.provider_name,
-      display_name: bp.display_name,
-      x_index: rep.blendedCostUsd / scuUsd,
-      is_current: price !== null && bp.family === price.family,
-    });
-  }
-  if (rows.length === 0) return [];
-
-  const current = rows.find((r) => r.is_current) ?? null;
-  const cur = current ? current.x_index : null;
-
-  // Provider order: the dev's provider first, then by each provider's flagship (max × index) desc.
-  const flagshipX = new Map<string, number>();
-  for (const r of rows) {
-    flagshipX.set(r.provider_name, Math.max(flagshipX.get(r.provider_name) ?? -Infinity, r.x_index));
-  }
-  const curProvider = current?.provider_name ?? null;
-  const providers = [...new Set(rows.map((r) => r.provider_name))].sort((x, y) => {
-    if (x === curProvider) return -1;
-    if (y === curProvider) return 1;
-    return flagshipX.get(y)! - flagshipX.get(x)! || x.localeCompare(y);
-  });
-
-  const nameW = Math.max(...rows.map((r) => r.display_name.length));
-  const out: string[] = [];
-  out.push("× index ladder (list price per unit of work · reference workload, not this session)");
-  out.push(
-    cur !== null && current
-      ? `You're on ${current.display_name} (${multiple(cur)} index).`
-      : price === null
-        ? "Your model is off-basket — showing absolute × index (no comparison anchor)."
-        // In the basket but absent from the current SCU breakdown (a cross-endpoint reconstitution
-        // race): no blended cost to anchor on, so fall back to the absolute ladder without claiming off-basket.
-        : "Your model isn't in the current SCU index — showing absolute × index (no comparison anchor).",
-  );
-  for (const p of providers) {
-    out.push(`  ${p}`);
-    const provRows = rows
-      .filter((r) => r.provider_name === p)
-      .sort((x, y) => y.x_index - x.x_index || x.display_name.localeCompare(y.display_name));
-    for (const r of provRows) {
-      let tag: string;
-      if (r.is_current) {
-        tag = "← your model";
-      } else if (cur === null) {
-        tag = ""; // off-basket: no anchor to compare against.
-      } else {
-        const factor = cur / r.x_index;
-        tag =
-          Math.abs(factor - 1) < 0.02
-            ? "≈ parity"
-            : factor > 1
-              ? `~${cheaperFactor(factor)} cheaper`
-              : "pricier";
-      }
-      out.push(line(`    ${r.display_name.padEnd(nameW)}  ${multiple(r.x_index).padStart(6)}   ${tag}`));
-    }
-  }
-  return out;
-}
-
-export interface ScuPositionArgs {
-  scu: ScuValue;
-  effective_usd: number | null;
-  nominal_usd: number | null;
-  price: ModelPrice | null;
-  synthesis?: boolean;
-}
-
-// SCU-denominated position block; each line is gated on its data, market reference always renders.
-function buildScuPosition(a: ScuPositionArgs): string[] {
-  const { scu, effective_usd, nominal_usd, price } = a;
-  const scuUsd = scu.scuUsd;
-
-  const rows: Array<[label: string, value: string]> = [];
-
-  // Session size: effective is the normal path; nominal is the tagged fallback if cache pricing is absent.
-  const basis =
-    effective_usd !== null
-      ? { usd: effective_usd, label: "effective" }
-      : nominal_usd !== null
-        ? { usd: nominal_usd, label: "nominal" }
-        : null;
-  if (basis) {
-    rows.push([
-      "Session size:",
-      `${scuAmount(basis.usd / scuUsd)} SCU   (${money(basis.usd)} ${basis.label} · ${scuPrice(scuUsd)} / SCU)`,
-    ]);
-  }
-
-  // list-to-list × index, joined by family; stamped so a basket reconstitution isn't mistaken for drift.
-  const rep = price
-    ? scu.familyRepresentatives.find((f) => f.family === price.family) ?? null
-    : null;
-  if (price && rep) {
-    const idx = rep.blendedCostUsd / scuUsd;
-    const date = scu.updatedAt ? scu.updatedAt.slice(0, 10) : "";
-    const stamp = `@ SCU ${scuPrice(scuUsd)}${date ? ` · ${date}` : ""}`;
-    rows.push([
-      `Your model (${price.display_name}):`,
-      `${idx.toFixed(1)}× index   (list-to-list: model blended ÷ SCU index)  ${stamp}`,
-    ]);
-  }
-
-  // Market reference (always renders); "geo-mean" is the v1 descriptor, other versions stay neutral.
-  const meanWord = scu.methodologyVersion === 1 ? "geo-mean" : "blend";
-  rows.push([
-    "Market reference:",
-    `SCU = ${scuPrice(scuUsd)} · ${meanWord} of ${scu.familyRepresentatives.length} model families`,
-  ]);
-
-  // Provisional, gated off until agreed: list × index discounted by the realized cache ratio.
-  if (
-    a.synthesis &&
-    rep &&
-    effective_usd !== null &&
-    nominal_usd !== null &&
-    nominal_usd > 0
-  ) {
-    const realized = (rep.blendedCostUsd / scuUsd) * (effective_usd / nominal_usd);
-    rows.push([
-      "Net realized:",
-      `${realized.toFixed(1)}× index   (list × index after your cache discount)`,
-    ]);
-  }
-
-  const width = Math.max(...rows.map(([l]) => l.length));
-  const out = ["SCU position"];
-  for (const [label, value] of rows) {
-    out.push(`  ${label.padEnd(width)}  ${value}`);
-  }
-  return out;
 }
 
 export async function renderSessionReport(
@@ -325,7 +159,7 @@ export async function renderSessionReport(
 
   if (scu) {
     L.push("");
-    for (const l of buildScuPosition({
+    for (const l of renderScuPositionBlock({
       scu,
       effective_usd,
       nominal_usd,
@@ -334,7 +168,7 @@ export async function renderSessionReport(
     })) {
       L.push(l);
     }
-    const ladder = buildXIndexLadder({ scu, basket, price: sessionPrice });
+    const ladder = renderXIndexLadderBlock({ scu, basket, price: sessionPrice });
     if (ladder.length) {
       L.push("");
       for (const l of ladder) L.push(l);
@@ -394,7 +228,3 @@ function renderOracleUnreachable(
   return L.join("\n");
 }
 
-export const _internals = {
-  buildScuPosition,
-  buildXIndexLadder,
-};
