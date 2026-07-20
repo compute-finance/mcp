@@ -1,20 +1,5 @@
-/**
- * Boot-time field mapping derived from the Oracle's OpenAPI response schema.
- *
- * Instead of hardcoding Oracle API field names, this module derives a mapping
- * at startup by parsing the OpenAPI response schema for /v1/oracle/basket.
- * When the Oracle renames a field (e.g. ct → wei), the semantic matcher
- * auto-discovers the new name — zero runtime token cost, no AI involved.
- * Discovery requires at least one keyword from each field's `required` list
- * to appear in the new name; renames that drop all keywords (e.g.
- * displayName → label) fall back to defaults and appear in `unmapped`.
- *
- * Fallback chain: OpenAPI → disk (last-known-good) → hardcoded defaults.
- */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { getAllOracleToolResponseSchemas } from "./openapi-schema.js";
+import { loadFromDisk, persistToDisk } from "./field-map-persistence.js";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -64,38 +49,6 @@ const DEFAULT_RECON: ReconFieldMap = {
   entries_array: "entries",
   sort_date: "publishedAt",
 };
-
-// ── Persistence ─────────────────────────────────────────────────────
-
-const PERSIST_DIR = join(homedir(), ".compute-finance");
-const PERSIST_PATH = join(PERSIST_DIR, "field-map.json");
-
-function persistToDisk(map: FieldMap): void {
-  try {
-    if (!existsSync(PERSIST_DIR)) mkdirSync(PERSIST_DIR, { recursive: true });
-    writeFileSync(PERSIST_PATH, JSON.stringify(map, null, 2));
-  } catch { /* non-critical */ }
-}
-
-function hasAllStringKeys<T extends object>(obj: unknown, reference: T): boolean {
-  if (typeof obj !== "object" || obj === null) return false;
-  const rec = obj as Record<string, unknown>;
-  return Object.keys(reference).every((k) => typeof rec[k] === "string");
-}
-
-function loadFromDisk(): FieldMap | null {
-  try {
-    if (!existsSync(PERSIST_PATH)) return null;
-    const raw = JSON.parse(readFileSync(PERSIST_PATH, "utf-8"));
-    if (
-      hasAllStringKeys(raw?.basket, DEFAULT_BASKET) &&
-      hasAllStringKeys(raw?.recon, DEFAULT_RECON)
-    ) {
-      return { ...raw, source: "disk-fallback" } as FieldMap;
-    }
-  } catch { /* corrupt file — ignore */ }
-  return null;
-}
 
 // ── Schema helpers ──────────────────────────────────────────────────
 
@@ -416,7 +369,7 @@ export async function initFieldMap(): Promise<FieldMap> {
 
     return fieldMap;
   } catch {
-    const fromDisk = loadFromDisk();
+    const fromDisk = loadFromDisk(DEFAULT_BASKET, DEFAULT_RECON);
     if (fromDisk) {
       fieldMap = fromDisk;
       process.stderr.write("[field-map] using disk fallback\n");
