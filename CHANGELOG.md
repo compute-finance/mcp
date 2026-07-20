@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/compute-finance/mcp/compare/v0.6.2...v0.7.0) (2026-07-20)
+
+
+### Features
+
+* price catalog-only models in compute_estimate and data_get_price ([#44](https://github.com/compute-finance/mcp/issues/44)) ([7bcb136](https://github.com/compute-finance/mcp/commit/7bcb13651157e7e4a34b86092615274621f5d570))
+
 ## [0.6.2](https://github.com/compute-finance/mcp/compare/v0.6.1...v0.6.2) (2026-07-08)
 
 
