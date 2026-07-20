@@ -1,8 +1,8 @@
 import {
-  priceSession,
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
+import { priceSession } from "../oracle/pricing.js";
 import {
   findLatestSessionFile,
   parseTranscript,

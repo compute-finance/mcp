@@ -1,12 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { _internals } from "./client.js";
 import {
   effectiveCost,
   nominalCost,
   priceSession,
   OracleCachePricingMissingError,
-  _internals,
-} from "./client.js";
+} from "./pricing.js";
 import type { CachePriceComponent, CachePricing, ModelPrice } from "./types.js";
 
 const { adaptComponent, adaptCache } = _internals;

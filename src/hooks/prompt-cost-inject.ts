@@ -9,10 +9,10 @@ import {
 } from "../storage/session.js";
 import {
   getScu,
-  priceSession,
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
+import { priceSession } from "../oracle/pricing.js";
 import { classifyProfile } from "../storage/profile.js";
 import { logSession } from "../storage/history.js";
 import { detectSubscription } from "../storage/subscription.js";

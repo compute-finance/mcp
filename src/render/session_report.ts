@@ -2,11 +2,10 @@ import {
   getBasketPrices,
   getActiveMethodologyVersion,
   getScuValue,
-  priceSession,
-  OracleCachePricingMissingError,
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
+import { priceSession, OracleCachePricingMissingError } from "../oracle/pricing.js";
 import {
   findSessionFile,
   findLatestSessionFile,

@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { parseSessionUsage } from "../storage/session.js";
 import { encodeCwd } from "../storage/tools.js";
 import {
-  priceSession,
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
+import { priceSession } from "../oracle/pricing.js";
 import { money, tokens, pad, round } from "./format.js";
 
 export interface ActiveSessionsArgs {
