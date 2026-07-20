@@ -20,7 +20,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   getBasketPrices,
-  getModelPrice,
   getScu,
   getBreakdown,
   getCpi,
@@ -33,6 +32,7 @@ import {
   getModelPriceAt,
   getBaseline,
   getScuAt,
+  resolveModelPrice,
   costUsd,
 } from "./oracle/client.js";
 import {
@@ -135,9 +135,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "data_get_price": {
         const model = requireString(a.model, "model");
         if (typeof model !== "string") return errorText(model.error);
-        const price = await getModelPrice(model);
-        if (!price) return errorText(`Model not in basket: ${model}`);
-        return textWithContext(price);
+        const priced = await resolveModelPrice(model);
+        if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
+        return textWithContext({ ...priced.price, price_source: priced.source });
       }
       case "data_get_scu":
         return textWithContext(await getScu());
@@ -202,14 +202,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const price = await getModelPrice(model);
-        if (!price) return errorText(`Model not in basket: ${model}`);
+        const priced = await resolveModelPrice(model);
+        if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
         return textWithContext({
-          model: price.model,
+          model: priced.price.model,
           input_tokens: inT,
           output_tokens: outT,
-          usd_cost: round(costUsd(price, inT, outT), 6),
-          source: "api.compute.finance/v1/oracle/basket",
+          usd_cost: round(costUsd(priced.price, inT, outT), 6),
+          price_source: priced.source,
+          source: `api.compute.finance/v1/oracle/${priced.source === "oracle-basket" ? "basket" : "resolve"}`,
         });
       }
       case "compute_compare": {

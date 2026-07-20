@@ -9,9 +9,9 @@ describe("errorText", () => {
   });
 
   it("includes the error message in content text", () => {
-    const result = errorText("Model not in basket: foo");
+    const result = errorText("Model not tracked by oracle: foo");
     const body = JSON.parse(result.content[0].text);
-    assert.equal(body.error, "Model not in basket: foo");
+    assert.equal(body.error, "Model not tracked by oracle: foo");
   });
 });
 

@@ -47,7 +47,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_price",
     description:
-      "Price for a single model — input/output USD and wei per million tokens, plus per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for one model; for comparing all models use compute_compare. Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
+      "Price for a single oracle-tracked model — basket members and catalog-only entries alike. Returns input/output USD per million tokens plus per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution; wei prices are populated only for basket members. `price_source` is 'oracle-basket' for basket members and 'oracle-catalog' for catalog-only models. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve). Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
     inputSchema: FALLBACK_SCHEMAS.data_get_price,
     annotations: ORACLE,
   },
@@ -132,7 +132,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_estimate",
     description:
-      "Nominal USD cost for a model given input/output token counts (no cache discounts). Source: Oracle API. For cache-aware cost, use analyze_session on a real transcript. Accepts canonical names like 'claude-sonnet-4.6'.",
+      "Nominal USD cost for any oracle-tracked model given input/output token counts (no cache discounts) — works for both basket members and catalog-only models. `price_source` echoes 'oracle-basket' or 'oracle-catalog'. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve). For cache-aware cost, use analyze_session on a real transcript. Accepts canonical names like 'claude-sonnet-4.6'.",
     inputSchema: {
       type: "object",
       properties: {

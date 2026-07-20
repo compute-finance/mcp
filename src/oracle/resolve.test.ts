@@ -2,10 +2,13 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveModel,
+  resolveModelPrice,
   resolvedToModelPrice,
+  _resetBasketCache,
   _resetResolveCache,
+  _seedBasketCache,
 } from "./client.js";
-import type { ResolvedModel } from "./types.js";
+import type { ModelPrice, ResolvedModel } from "./types.js";
 
 let originalFetch: typeof globalThis.fetch;
 let fetchCalls: string[] = [];
@@ -29,6 +32,7 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   fetchCalls = [];
   _resetResolveCache();
+  _resetBasketCache();
 });
 
 afterEach(() => {
@@ -172,6 +176,119 @@ describe("resolveModel", () => {
       capturedUrl.includes("claude-opus-4.8%5Bexperimental%5D"),
       `expected encoded brackets in URL; got: ${capturedUrl}`,
     );
+  });
+});
+
+describe("resolveModelPrice", () => {
+  function resolveWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      inputKey: "some-model",
+      resolvedKey: "some-model",
+      family: "some.family",
+      provider: { key: "openai", name: "OpenAI" },
+      prices: { inputUsdPerMillion: 3, outputUsdPerMillion: 12 },
+      cache: null,
+      inBasket: false,
+      priceSource: "oracle-catalog",
+      ...over,
+    };
+  }
+
+  function basketEntry(over: Partial<ModelPrice> = {}): ModelPrice {
+    return {
+      model: "claude-opus-4.8",
+      display_name: "Claude Opus 4.8",
+      provider: "anthropic",
+      provider_name: "Anthropic",
+      family: "anthropic.claude-opus",
+      released_at: null,
+      input_usd_per_million: 15,
+      output_usd_per_million: 75,
+      input_wei_per_million: 15_000_000,
+      output_wei_per_million: 75_000_000,
+      cache: null,
+      ...over,
+    };
+  }
+
+  it("SHOULD return null IF the oracle reports the model as off-basket", async () => {
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          family: null,
+          provider: null,
+          prices: null,
+          priceSource: "off-basket",
+        }),
+      ),
+    );
+    assert.equal(await resolveModelPrice("unknown-model"), null);
+  });
+
+  it("SHOULD return catalog-derived prices tagged as oracle-catalog FOR a non-basket model", async () => {
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          inputKey: "gpt-x-preview",
+          resolvedKey: "gpt-x-preview",
+          priceSource: "oracle-catalog",
+          inBasket: false,
+        }),
+      ),
+    );
+    const priced = await resolveModelPrice("gpt-x-preview");
+    assert.ok(priced !== null);
+    assert.equal(priced.source, "oracle-catalog");
+    assert.equal(priced.price.model, "gpt-x-preview");
+    assert.equal(priced.price.input_usd_per_million, 3);
+    assert.equal(priced.price.output_usd_per_million, 12);
+  });
+
+  it("SHOULD return null IF the resolve request fails — Bug guarded: a 5xx must not surface as a fabricated zero-price entry", async () => {
+    mockFetch(() => new Response("oops", { status: 503 }));
+    assert.equal(await resolveModelPrice("claude-opus-4.7"), null);
+  });
+
+  it("SHOULD enrich WITH the full basket entry (wei prices, display name) FOR an oracle-basket model", async () => {
+    _seedBasketCache([basketEntry()]);
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          inputKey: "claude-opus-4-8",
+          resolvedKey: "claude-opus-4.8",
+          family: "anthropic.claude-opus",
+          provider: { key: "anthropic", name: "Anthropic" },
+          prices: { inputUsdPerMillion: 15, outputUsdPerMillion: 75 },
+          inBasket: true,
+          priceSource: "oracle-basket",
+        }),
+      ),
+    );
+    const priced = await resolveModelPrice("claude-opus-4-8");
+    assert.ok(priced !== null);
+    assert.equal(priced.source, "oracle-basket");
+    assert.equal(priced.price.model, "claude-opus-4.8");
+    assert.equal(priced.price.display_name, "Claude Opus 4.8");
+    assert.equal(priced.price.input_wei_per_million, 15_000_000);
+    assert.equal(priced.price.output_wei_per_million, 75_000_000);
+  });
+
+  it("SHOULD fall back to resolvedToModelPrice IF the basket does not contain the resolved key", async () => {
+    _seedBasketCache([]);
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          resolvedKey: "claude-opus-4.8",
+          inBasket: true,
+          priceSource: "oracle-basket",
+        }),
+      ),
+    );
+    const priced = await resolveModelPrice("claude-opus-4-8");
+    assert.ok(priced !== null);
+    assert.equal(priced.source, "oracle-basket");
+    assert.equal(priced.price.model, "claude-opus-4.8");
+    assert.equal(priced.price.input_wei_per_million, 0);
   });
 });
 
