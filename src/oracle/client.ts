@@ -384,6 +384,32 @@ export function _resetResolveCache(): void {
   resolveCache.clear();
 }
 
+export function _resetBasketCache(): void {
+  basketCache = null;
+}
+
+export function _seedBasketCache(models: ModelPrice[]): void {
+  basketCache = { data: models, fetchedAt: Date.now() };
+}
+
+export interface ResolvedModelPrice {
+  price: ModelPrice;
+  source: Exclude<PriceSource, "off-basket">;
+}
+
+export async function resolveModelPrice(
+  model: string,
+): Promise<ResolvedModelPrice | null> {
+  const resolved = await resolveModel(model);
+  if (!resolved || resolved.price_source === "off-basket") return null;
+  const source = resolved.price_source;
+  if (resolved.in_basket) {
+    const basketEntry = await getModelPrice(resolved.resolved_key);
+    if (basketEntry) return { price: basketEntry, source };
+  }
+  return { price: resolvedToModelPrice(resolved), source };
+}
+
 export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
   return {
     model: r.resolved_key,
