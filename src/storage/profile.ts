@@ -28,7 +28,7 @@ export interface ProfileInput {
 export function classifyProfile(u: ProfileInput): ProfileResult {
   // out_in_ratio reflects session SHAPE, not cost: settled context only
   // (raw_input + cache_read), excluding cache_creation. Cost math is separate —
-  // see effectiveCost in oracle/client.ts.
+  // see effectiveCost in oracle/pricing.ts.
   const totalIn = u.raw_input_tokens + u.cache_read_tokens;
   const out_in_ratio = totalIn > 0 ? u.output_tokens / totalIn : 0;
   const editRatio = u.tool_calls > 0 ? u.edits / u.tool_calls : 0;

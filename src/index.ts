@@ -33,8 +33,8 @@ import {
   getBaseline,
   getScuAt,
   resolveModelPrice,
-  costUsd,
 } from "./oracle/client.js";
+import { costUsd } from "./oracle/pricing.js";
 import {
   getAllOracleToolSchemas,
   getAllOracleToolResponseSchemas,

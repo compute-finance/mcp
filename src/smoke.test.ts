@@ -14,8 +14,8 @@ import {
   getModelPriceAt,
   getBaseline,
   getScuAt,
-  costUsd,
 } from "./oracle/client.js";
+import { costUsd } from "./oracle/pricing.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { round } from "./render/format.js";
