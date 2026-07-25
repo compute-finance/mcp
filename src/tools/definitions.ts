@@ -1,4 +1,4 @@
-import { FALLBACK_SCHEMAS } from "../oracle/openapi-schema.js";
+import { FALLBACK_SCHEMAS } from "../oracle/openapi-schema-mappings.js";
 
 export interface ToolAnnotations {
   title?: string;
