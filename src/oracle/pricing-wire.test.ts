@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { usdCost, withBilledPrices } from "./pricing-view.js";
+import { usdCost, withBilledPrices } from "./pricing-wire.js";
 import type { ModelPrice } from "./types.js";
 
 function price(over: Partial<ModelPrice> = {}): ModelPrice {

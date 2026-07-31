@@ -5,7 +5,7 @@ import {
   resolvedToModelPrice,
 } from "../oracle/client.js";
 import { getRoutingFeeRate } from "../oracle/routing-fee.js";
-import { PRICING_NOTE, usdCost } from "../oracle/pricing-view.js";
+import { PRICING_NOTE, usdCost } from "../oracle/pricing-wire.js";
 import { priceSession, OracleCachePricingMissingError } from "../oracle/pricing.js";
 import {
   findSessionFile,

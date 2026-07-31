@@ -39,7 +39,7 @@ import {
   PRICING_NOTE,
   usdCost,
   withBilledPrices,
-} from "./oracle/pricing-view.js";
+} from "./oracle/pricing-wire.js";
 import {
   getAllOracleToolSchemas,
   getAllOracleToolResponseSchemas,
