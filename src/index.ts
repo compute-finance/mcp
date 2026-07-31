@@ -34,7 +34,12 @@ import {
   getScuAt,
   resolveModelPrice,
 } from "./oracle/client.js";
-import { costUsd } from "./oracle/pricing.js";
+import { getRoutingFeeRate } from "./oracle/routing-fee.js";
+import {
+  PRICING_NOTE,
+  usdCost,
+  withBilledPrices,
+} from "./oracle/pricing-view.js";
 import {
   getAllOracleToolSchemas,
   getAllOracleToolResponseSchemas,
@@ -45,7 +50,6 @@ import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { renderSessionReport } from "./render/session_report.js";
 import { renderConsumptionReport } from "./render/consumption_report.js";
 import { renderActiveSessions } from "./render/sessions_list.js";
-import { round } from "./render/format.js";
 import { toolDefinitions, ToolDef } from "./tools/definitions.js";
 import {
   requireString,
@@ -78,7 +82,7 @@ async function buildTools(): Promise<ToolDef[]> {
     if (isOracleBackedTool(tool.name) && oracleSchemas[tool.name]) {
       updated = { ...updated, inputSchema: oracleSchemas[tool.name] };
     }
-    if (responseSchemas[tool.name]) {
+    if (!tool.adaptedOutput && responseSchemas[tool.name]) {
       updated = {
         ...updated,
         description:
@@ -127,17 +131,32 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     switch (name) {
       case "data_get_basket": {
+        const [models, rate] = await Promise.all([
+          getBasketPrices(),
+          getRoutingFeeRate(),
+        ]);
         return textWithContext({
-          models: await getBasketPrices(),
+          models: models.map((m) => withBilledPrices(m, rate)),
+          routing_fee_rate: rate,
+          pricing_note: PRICING_NOTE,
           source: "api.compute.finance/v1/oracle/basket",
         });
       }
       case "data_get_price": {
         const model = requireString(a.model, "model");
         if (typeof model !== "string") return errorText(model.error);
-        const priced = await resolveModelPrice(model);
+        const [priced, rate] = await Promise.all([
+          resolveModelPrice(model),
+          getRoutingFeeRate(),
+        ]);
         if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
-        return textWithContext({ ...priced.price, price_source: priced.source });
+        return textWithContext({
+          ...withBilledPrices(priced.price, rate),
+          routing_fee_rate: rate,
+          price_source: priced.source,
+          pricing_note: PRICING_NOTE,
+          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket",
+        });
       }
       case "data_get_scu":
         return textWithContext(await getScu());
@@ -202,15 +221,20 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const priced = await resolveModelPrice(model);
+        const [priced, rate] = await Promise.all([
+          resolveModelPrice(model),
+          getRoutingFeeRate(),
+        ]);
         if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
         return textWithContext({
           model: priced.price.model,
           input_tokens: inT,
           output_tokens: outT,
-          usd_cost: round(costUsd(priced.price, inT, outT), 6),
+          ...usdCost(priced.price, inT, outT, rate),
+          routing_fee_rate: rate,
           price_source: priced.source,
-          source: `api.compute.finance/v1/oracle/${priced.source === "oracle-basket" ? "basket" : "resolve"}`,
+          pricing_note: PRICING_NOTE,
+          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket",
         });
       }
       case "compute_compare": {
@@ -218,18 +242,19 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const [basket, methodologyVersion] = await Promise.all([
+        const [basket, methodologyVersion, rate] = await Promise.all([
           getBasketPrices(),
           getActiveMethodologyVersion(),
+          getRoutingFeeRate(),
         ]);
         const ranked = basket
           .map((p) => ({
             model: p.model,
             provider: p.provider,
             family: p.family,
-            usd_cost: round(costUsd(p, inT, outT), 6),
+            ...usdCost(p, inT, outT, rate),
           }))
-          .sort((x, y) => x.usd_cost - y.usd_cost);
+          .sort((x, y) => x.base_usd_cost - y.base_usd_cost);
         const by_family: Record<string, typeof ranked> = {};
         for (const row of ranked) {
           const key = row.family || "(unspecified)";
@@ -240,6 +265,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           output_tokens: outT,
           ranked,
           by_family,
+          routing_fee_rate: rate,
+          pricing_note: PRICING_NOTE,
           methodology_version: methodologyVersion,
           source: "api.compute.finance/v1/oracle/basket",
         });

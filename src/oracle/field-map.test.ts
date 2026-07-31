@@ -116,10 +116,24 @@ describe("deriveBasketMap — current schema", () => {
     assert.equal(map.provider_name, "name");
     assert.equal(map.family, "family");
     assert.equal(map.released_at, "releasedAt");
-    assert.equal(map.marked_up_usd_price, "markedUpUsdPricePerMillion");
-    assert.equal(map.marked_up_wei_price, "markedUpWeiPricePerMillion");
+    assert.equal(map.base_usd_price, "usdPricePerMillion");
+    assert.equal(map.base_wei_price, "weiPricePerMillion");
+    assert.equal(map.routing_fee_rate, "routingFeeRate");
     assert.equal(mismatches.length, 0);
     assert.equal(unmapped.length, 0);
+  });
+
+  it("SHOULD map the base price fields, never the marked-up twins — Bug guarded: reading markedUp* blends the routing fee into the list price", () => {
+    const { map } = deriveBasketMap(LIVE_BASKET_SCHEMA as any);
+    assert.ok(!map.base_usd_price.toLowerCase().includes("marked"));
+    assert.ok(!map.base_wei_price.toLowerCase().includes("marked"));
+  });
+
+  it("SHOULD report routing_fee_rate unmapped IF the basket publishes no rate — Bug guarded: a missing rate must surface, not silently resolve to some other number", () => {
+    const schema = JSON.parse(JSON.stringify(LIVE_BASKET_SCHEMA));
+    delete schema.properties.routingFeeRate;
+    const { unmapped } = deriveBasketMap(schema as any);
+    assert.ok(unmapped.includes("routing_fee_rate"));
   });
 });
 
@@ -142,9 +156,9 @@ describe("deriveBasketMap — simulated renames", () => {
     };
 
     const { map, mismatches } = deriveBasketMap(schema as any);
-    assert.equal(map.marked_up_wei_price, "markedUpComputePricePerMillion");
-    assert.ok(mismatches.some((m) => m.includes("marked_up_wei_price")));
-    assert.equal(map.marked_up_usd_price, "markedUpUsdPricePerMillion");
+    assert.equal(map.base_wei_price, "computePricePerMillion");
+    assert.ok(mismatches.some((m) => m.includes("base_wei_price")));
+    assert.equal(map.base_usd_price, "usdPricePerMillion");
   });
 
   it("auto-discovers models array rename", () => {

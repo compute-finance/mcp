@@ -13,6 +13,7 @@ export interface ToolDef {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: ToolAnnotations;
+  adaptedOutput?: true;
 }
 
 const ORACLE: ToolAnnotations = {
@@ -40,16 +41,18 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_basket",
     description:
-      "All models in the oracle basket — provider, family (e.g. openai.gpt, anthropic.claude, google.gemini, xai.grok), input/output USD and wei prices per million tokens, and per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution. Source: Oracle API. Use for the full pricing picture. For a single model, use data_get_price instead.",
+      "All models in the oracle basket — provider, family (e.g. openai.gpt, anthropic.claude, google.gemini, xai.grok), base_* USD and wei prices per million tokens (the provider list price), billed_* prices (what compute.finance charges), and per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution, priced on the same base. `routing_fee_rate` ships once at the top level; billed_* is null when the oracle does not publish it. Compare models on base_*; budget on billed_*. Source: Oracle API. For a single model, use data_get_price instead.",
     inputSchema: FALLBACK_SCHEMAS.data_get_basket,
     annotations: ORACLE,
+    adaptedOutput: true,
   },
   {
     name: "data_get_price",
     description:
-      "Price for a single oracle-tracked model — basket members and catalog-only entries alike. Returns input/output USD per million tokens plus per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) with provider attribution; wei prices are populated only for basket members. `price_source` is 'oracle-basket' for basket members and 'oracle-catalog' for catalog-only models. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve). Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
+      "Price for a single oracle-tracked model — basket members and catalog-only entries on identical terms. Returns base_input/base_output USD per million tokens (the provider list price), `routing_fee_rate`, and billed_* = base × (1 + routing_fee_rate) — what compute.finance charges. Wei prices are populated for basket members and null otherwise. Per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) is on the base basis. Compare models on base_*: two models with the same provider price return the same numbers regardless of basket membership. `price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/basket). Accepts canonical names like 'claude-opus-4.7' or 'gpt-5.5'.",
     inputSchema: FALLBACK_SCHEMAS.data_get_price,
     annotations: ORACLE,
+    adaptedOutput: true,
   },
   {
     name: "data_get_scu",
@@ -132,7 +135,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_estimate",
     description:
-      "Nominal USD cost for any oracle-tracked model given input/output token counts (no cache discounts) — works for both basket members and catalog-only models. `price_source` echoes 'oracle-basket' or 'oracle-catalog'. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve). For cache-aware cost, use analyze_session on a real transcript. Accepts canonical names like 'claude-sonnet-4.6'.",
+      "Nominal USD cost for any oracle-tracked model given input/output token counts (no cache discounts) — basket members and catalog-only models on identical terms. Returns `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges), plus the `routing_fee_rate` they derive from. Compare models on base_usd_cost; budget on billed_usd_cost. `price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis, so two models with the same provider price return the same cost. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/basket). For cache-aware cost, use analyze_session on a real transcript. Accepts canonical names like 'claude-sonnet-4.6'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -147,7 +150,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_compare",
     description:
-      "Rank all basket models by nominal cost for a workload. Source: Oracle API. Returns a sorted list of per-model USD cost plus a grouping by family (e.g. openai.gpt, anthropic.claude). Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
+      "Rank all basket models by nominal cost for a workload. Source: Oracle API. Each row carries `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges); ranking is by base_usd_cost, and since the routing fee is one global rate the order is identical on either basis. Returns the sorted list plus a grouping by family (e.g. openai.gpt, anthropic.claude). Covers basket members only — for a catalog-only model use compute_estimate, whose numbers are on the same basis. Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -214,7 +217,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "analyze_session",
     description:
-      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. `current_model_cost.effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
+      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `current_model_cost` is on the base (provider list) basis, stated in `current_model_cost_basis`; `counterfactual_nominal` rows carry `base_usd_cost` and `billed_usd_cost`, so the session and the counterfactual are directly comparable on base. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. `current_model_cost.effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {

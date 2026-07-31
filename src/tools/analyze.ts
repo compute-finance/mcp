@@ -4,11 +4,9 @@ import {
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
-import {
-  costUsd,
-  priceSession,
-  OracleCachePricingMissingError,
-} from "../oracle/pricing.js";
+import { getRoutingFeeRate } from "../oracle/routing-fee.js";
+import { PRICING_NOTE, usdCost } from "../oracle/pricing-view.js";
+import { priceSession, OracleCachePricingMissingError } from "../oracle/pricing.js";
 import {
   findSessionFile,
   findLatestSessionFile,
@@ -50,10 +48,11 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   const path = pathOrError as string;
 
   const usage = parseSessionUsage(path);
-  const [basket, methodologyVersion, resolved] = await Promise.all([
+  const [basket, methodologyVersion, resolved, rate] = await Promise.all([
     getBasketPrices(),
     getActiveMethodologyVersion(),
     resolveModel(usage.model),
+    getRoutingFeeRate(),
   ]);
   const inBasket = resolved?.in_basket ?? false;
   const normalized =
@@ -67,9 +66,9 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
       model: p.model,
       provider: p.provider,
       family: p.family,
-      usd_cost: round(costUsd(p, totalIn, usage.output_tokens), 6),
+      ...usdCost(p, totalIn, usage.output_tokens, rate),
     }))
-    .sort((x, y) => x.usd_cost - y.usd_cost);
+    .sort((x, y) => x.base_usd_cost - y.base_usd_cost);
 
   let current: unknown = null;
   let effective_usd: number | null = null;
@@ -163,7 +162,10 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
       extended_thinking_used: usage.extended_thinking_used,
     },
     current_model_cost: current,
+    current_model_cost_basis: "base",
     counterfactual_nominal: counterfactual,
+    routing_fee_rate: rate,
+    pricing_note: PRICING_NOTE,
     profile: prof,
     methodology_version: methodologyVersion,
     source: "api.compute.finance/v1/oracle/basket + local transcript",

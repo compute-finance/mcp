@@ -62,3 +62,7 @@ export function round(n: number, places: number): number {
   const f = 10 ** places;
   return Math.round(n * f) / f;
 }
+
+export function trimFloatNoise(n: number): number {
+  return isFinite(n) ? Number(n.toPrecision(12)) : n;
+}

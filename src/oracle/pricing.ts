@@ -25,8 +25,8 @@ export function costUsd(
   outputTokens: number,
 ): number {
   return (
-    (inputTokens / 1_000_000) * price.input_usd_per_million +
-    (outputTokens / 1_000_000) * price.output_usd_per_million
+    (inputTokens / 1_000_000) * price.base_input_usd_per_million +
+    (outputTokens / 1_000_000) * price.base_output_usd_per_million
   );
 }
 
@@ -37,8 +37,8 @@ export function nominalCost(
   cacheCreate: number,
   out: number,
 ): number {
-  const inPerTok = price.input_usd_per_million / 1_000_000;
-  const outPerTok = price.output_usd_per_million / 1_000_000;
+  const inPerTok = price.base_input_usd_per_million / 1_000_000;
+  const outPerTok = price.base_output_usd_per_million / 1_000_000;
   return (rawIn + cacheRead + cacheCreate) * inPerTok + out * outPerTok;
 }
 
@@ -86,8 +86,8 @@ export function effectiveCost(
   cacheCreate: number,
   out: number,
 ): EffectiveCost {
-  const inPerTok = price.input_usd_per_million / 1_000_000;
-  const outPerTok = price.output_usd_per_million / 1_000_000;
+  const inPerTok = price.base_input_usd_per_million / 1_000_000;
+  const outPerTok = price.base_output_usd_per_million / 1_000_000;
 
   if ((cacheRead > 0 || cacheCreate > 0) && price.cache === null) {
     throw new OracleCachePricingMissingError(price.model, "block");

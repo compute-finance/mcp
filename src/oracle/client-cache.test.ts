@@ -30,10 +30,10 @@ function priceWithCache(cache: CachePricing | null): ModelPrice {
     provider_name: "Anthropic",
     family: "anthropic.claude",
     released_at: null,
-    input_usd_per_million: 5,
-    output_usd_per_million: 25,
-    input_wei_per_million: 0,
-    output_wei_per_million: 0,
+    base_input_usd_per_million: 5,
+    base_output_usd_per_million: 25,
+    base_input_wei_per_million: 0,
+    base_output_wei_per_million: 0,
     cache,
   };
 }

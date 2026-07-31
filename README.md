@@ -61,8 +61,8 @@ npx . setup
 
 | Tool | Description |
 |------|-------------|
-| `data_get_basket` | All models with provider, family (e.g. `openai.gpt`, `anthropic.claude`), USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
-| `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) |
+| `data_get_basket` | All models with provider, family (e.g. `openai.gpt`, `anthropic.claude`), `base_*` and `billed_*` USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
+| `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) — basket members and catalog-only entries on identical terms |
 | `data_get_scu` | Current Standard Compute Unit — value plus a methodology-versioned `breakdown` listing every family representative |
 | `data_get_breakdown` | Per-family blended-cost breakdown alone — methodology-versioned discriminated union with one entry per family representative |
 | `data_get_cpi` | Full Compute Price Index — basket with `scuUsd`, version, raw/marked-up prices |
@@ -73,12 +73,14 @@ npx . setup
 
 Cache pricing comes from the Compute Finance Oracle. Session and consumption reports show effective (cache-aware) cost when the oracle has published the relevant cache components; otherwise they show nominal cost (input rate applied to every input variant) and label effective as unavailable for that model.
 
+Every price is reported on two bases: `base_*` is the provider list price, identical for every model the oracle tracks, and `billed_*` is what compute.finance charges — `base × (1 + routing_fee_rate)`. Compare models on `base_*`, budget on `billed_*`. The rate ships once per response and `billed_*` is null when the oracle does not publish it. Session and consumption reports are on the base basis throughout.
+
 ### Compute
 
 | Tool | Description |
 |------|-------------|
-| `compute_estimate` | Nominal USD cost for a model given input/output token counts |
-| `compute_compare` | Rank all basket models by cost for a workload, grouped by family |
+| `compute_estimate` | Nominal USD cost for a model given input/output token counts — `base_usd_cost`, `routing_fee_usd`, `billed_usd_cost` |
+| `compute_compare` | Rank all basket models by cost for a workload, grouped by family — the same three cost figures per row |
 
 ### Render (Claude Code skills)
 

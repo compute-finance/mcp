@@ -11,6 +11,7 @@ import {
 } from "./types.js";
 import { CacheComponentKind } from "./pricing.js";
 import { getFieldMap } from "./field-map.js";
+import { trimFloatNoise } from "../render/format.js";
 
 const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
 
@@ -21,6 +22,7 @@ interface CacheEntry<T> {
 
 const CACHE_TTL_MS = 60_000;
 let cpiCache: CacheEntry<unknown> | null = null;
+let cpiInflight: Promise<unknown> | null = null;
 let scuCache: CacheEntry<unknown> | null = null;
 let reconstitutionsCache: CacheEntry<unknown> | null = null;
 let methodologyCache: CacheEntry<unknown> | null = null;
@@ -39,9 +41,16 @@ export async function getCpi(): Promise<unknown> {
   if (cpiCache && Date.now() - cpiCache.fetchedAt < CACHE_TTL_MS) {
     return cpiCache.data;
   }
-  const data = await fetchJson("/v1/oracle/basket");
-  cpiCache = { data, fetchedAt: Date.now() };
-  return data;
+  if (cpiInflight) return cpiInflight;
+  cpiInflight = fetchJson("/v1/oracle/basket")
+    .then((data) => {
+      cpiCache = { data, fetchedAt: Date.now() };
+      return data;
+    })
+    .finally(() => {
+      cpiInflight = null;
+    });
+  return cpiInflight;
 }
 
 export async function getScu(): Promise<unknown> {
@@ -235,9 +244,9 @@ function adaptComponent(
   if (raw === null || raw === undefined) return null;
   let { usdPerMillion, ratioOfInput } = raw;
   if (usdPerMillion === null && ratioOfInput !== null) {
-    usdPerMillion = ratioOfInput * inputUsdPerMillion;
+    usdPerMillion = trimFloatNoise(ratioOfInput * inputUsdPerMillion);
   } else if (ratioOfInput === null && usdPerMillion !== null && inputUsdPerMillion > 0) {
-    ratioOfInput = usdPerMillion / inputUsdPerMillion;
+    ratioOfInput = trimFloatNoise(usdPerMillion / inputUsdPerMillion);
   }
   if (usdPerMillion === null || ratioOfInput === null) {
     throw new Error(
@@ -281,8 +290,8 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
     const providerObj = m[fm.provider] as Record<string, unknown> | undefined;
     const providerKey = (providerObj?.[fm.provider_key] as string) ?? "unknown";
     const providerName = (providerObj?.[fm.provider_name] as string) ?? providerKey;
-    const markedUpUsd = inputOutput(m[fm.marked_up_usd_price]);
-    const markedUpWei = inputOutput(m[fm.marked_up_wei_price]);
+    const baseUsd = inputOutput(m[fm.base_usd_price]);
+    const baseWei = inputOutput(m[fm.base_wei_price]);
     const rawCache = (m.cache ?? null) as OracleCacheBlock | null;
     const family = m[fm.family] as string | undefined;
     if (!family && !familyDriftWarned.has(id)) {
@@ -298,11 +307,11 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
       provider_name: providerName,
       family: family ?? "",
       released_at: (m[fm.released_at] as string | null) ?? null,
-      input_usd_per_million: markedUpUsd.input,
-      output_usd_per_million: markedUpUsd.output,
-      input_wei_per_million: markedUpWei.input,
-      output_wei_per_million: markedUpWei.output,
-      cache: adaptCache(id, markedUpUsd.input, rawCache),
+      base_input_usd_per_million: baseUsd.input,
+      base_output_usd_per_million: baseUsd.output,
+      base_input_wei_per_million: baseWei.input,
+      base_output_wei_per_million: baseWei.output,
+      cache: adaptCache(id, baseUsd.input, rawCache),
     });
   }
   basketCache = { data: out, fetchedAt: Date.now() };
@@ -334,8 +343,8 @@ function adaptResolved(wire: WireResolveResponse): ResolvedModel {
     resolved_key: wire.resolvedKey,
     family: wire.family,
     provider: wire.provider,
-    input_usd_per_million: wire.prices?.inputUsdPerMillion ?? null,
-    output_usd_per_million: wire.prices?.outputUsdPerMillion ?? null,
+    base_input_usd_per_million: wire.prices?.inputUsdPerMillion ?? null,
+    base_output_usd_per_million: wire.prices?.outputUsdPerMillion ?? null,
     cache: adaptCache(wire.resolvedKey, inputUsd, wire.cache),
     in_basket: wire.inBasket,
     price_source: wire.priceSource,
@@ -368,6 +377,8 @@ export function _resetResolveCache(): void {
 
 export function _resetBasketCache(): void {
   basketCache = null;
+  cpiCache = null;
+  cpiInflight = null;
 }
 
 export function _seedBasketCache(models: ModelPrice[]): void {
@@ -400,10 +411,10 @@ export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
     provider_name: r.provider?.name ?? "",
     family: r.family ?? "",
     released_at: null,
-    input_usd_per_million: r.input_usd_per_million ?? 0,
-    output_usd_per_million: r.output_usd_per_million ?? 0,
-    input_wei_per_million: 0,
-    output_wei_per_million: 0,
+    base_input_usd_per_million: r.base_input_usd_per_million ?? 0,
+    base_output_usd_per_million: r.base_output_usd_per_million ?? 0,
+    base_input_wei_per_million: null,
+    base_output_wei_per_million: null,
     cache: r.cache,
   };
 }
