@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/compute-finance/mcp/compare/v0.7.0...v0.8.0) (2026-08-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* report base and billed prices separately for every model ([#51](https://github.com/compute-finance/mcp/issues/51))
+
+### Features
+
+* report base and billed prices separately for every model ([#51](https://github.com/compute-finance/mcp/issues/51)) ([a45b1c6](https://github.com/compute-finance/mcp/commit/a45b1c6cad57bf0a953f73023677a30b2da738cd))
+
+
+### Code Refactoring
+
+* extract cost math from oracle/client into oracle/pricing ([#46](https://github.com/compute-finance/mcp/issues/46)) ([567a7a6](https://github.com/compute-finance/mcp/commit/567a7a6ff6d0f70ff612a3d209b7666ced3af0ff))
+* extract field-map persistence into field-map-persistence ([#48](https://github.com/compute-finance/mcp/issues/48)) ([ce87bab](https://github.com/compute-finance/mcp/commit/ce87bab43b4398d201410429538ebcac4dd48c49))
+* extract static MCP-tool mappings from openapi-schema into openapi-schema-mappings ([#47](https://github.com/compute-finance/mcp/issues/47)) ([2932f8c](https://github.com/compute-finance/mcp/commit/2932f8c41df7e7383ea92b3def625481dd34f9ee))
+* split SCU-position and x-index-ladder into render/blocks ([#49](https://github.com/compute-finance/mcp/issues/49)) ([e9f8af8](https://github.com/compute-finance/mcp/commit/e9f8af84201997750d0306d8ebbeef5dafe79749))
+
 ## [0.7.0](https://github.com/compute-finance/mcp/compare/v0.6.2...v0.7.0) (2026-07-20)
 
 

@@ -3,7 +3,7 @@
   "name": "io.github.compute-finance/mcp",
   "title": "Compute Finance Oracle",
   "description": "Live AI compute pricing oracle — real-time LLM model prices across providers",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "websiteUrl": "https://compute.finance",
   "repository": {
     "url": "https://github.com/compute-finance/mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "@compute-finance/mcp",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

@@ -1,6 +1,6 @@
 {
   "name": "@compute-finance/mcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Live AI compute pricing oracle MCP server — real-time LLM model prices across providers. Includes Claude Code skills for session cost analysis.",
   "type": "module",
   "license": "MIT",
