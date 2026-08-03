@@ -14,8 +14,12 @@ import {
   getModelPriceAt,
   getBaseline,
   getScuAt,
+  resolveModel,
+  resolveModelPrice,
 } from "./oracle/client.js";
 import { costUsd } from "./oracle/pricing.js";
+import { getRoutingFeeRate } from "./oracle/routing-fee.js";
+import { usdCost } from "./oracle/pricing-wire.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { round } from "./render/format.js";
@@ -34,10 +38,10 @@ describe("smoke: data_get_basket", () => {
     const first = models[0];
     assert.equal(typeof first.model, "string");
     assert.ok(first.model.length > 0, "model id must be non-empty");
-    assert.equal(typeof first.input_usd_per_million, "number");
-    assert.equal(typeof first.output_usd_per_million, "number");
-    assert.ok(first.input_usd_per_million > 0, "input price must be positive");
-    assert.ok(first.output_usd_per_million > 0, "output price must be positive");
+    assert.equal(typeof first.base_input_usd_per_million, "number");
+    assert.equal(typeof first.base_output_usd_per_million, "number");
+    assert.ok(first.base_input_usd_per_million > 0, "input price must be positive");
+    assert.ok(first.base_output_usd_per_million > 0, "output price must be positive");
     assert.equal(typeof first.provider, "string");
     assert.equal(typeof first.family, "string");
     assert.ok(first.family.length > 0, "family must be non-empty");
@@ -78,8 +82,8 @@ describe("smoke: data_get_price", () => {
     const price = await getModelPrice(sample.model);
     assert.ok(price !== null, `${sample.model} must be in basket`);
     assert.equal(price.model, sample.model);
-    assert.ok(price.input_usd_per_million > 0);
-    assert.ok(price.output_usd_per_million > 0);
+    assert.ok(price.base_input_usd_per_million > 0);
+    assert.ok(price.base_output_usd_per_million > 0);
     assert.equal(typeof price.provider, "string");
     assert.equal(typeof price.family, "string");
   });
@@ -87,6 +91,74 @@ describe("smoke: data_get_price", () => {
   it("returns null for nonexistent model", { timeout: 10_000 }, async () => {
     const price = await getModelPrice("nonexistent-model-xyz-999");
     assert.equal(price, null);
+  });
+
+  it("SHOULD report the same base price for a basket member as /v1/oracle/resolve serves — Bug guarded: sourcing basket members from the marked-up field opens a 5% gap between the two endpoints", { timeout: 10_000 }, async () => {
+    const basket = await getBasketPrices();
+    const sample = basket[0];
+    const resolved = await resolveModel(sample.model);
+    assert.ok(resolved !== null, `${sample.model} must resolve`);
+    assert.equal(sample.base_input_usd_per_million, resolved.base_input_usd_per_million);
+    assert.equal(sample.base_output_usd_per_million, resolved.base_output_usd_per_million);
+  });
+});
+
+describe("smoke: routing fee contract", () => {
+  it("SHOULD publish a marked-up wei price that is exactly base × (1 + routingFeeRate) for every basket model — Bug guarded: billed prices are derived locally from the base price, which only holds while the fee stays a single linear global rate", { timeout: 10_000 }, async () => {
+    const cpi = (await getCpi()) as Record<string, unknown>;
+    const rate = cpi.routingFeeRate;
+    assert.equal(typeof rate, "number", "the basket must publish routingFeeRate");
+    const models = cpi.models as Array<Record<string, any>>;
+    assert.ok(models.length > 0, "basket must not be empty");
+    for (const m of models) {
+      for (const side of ["input", "output"] as const) {
+        const base = m.weiPricePerMillion[side];
+        const expected = base * (1 + (rate as number));
+        assert.ok(
+          Math.abs(m.markedUpWeiPricePerMillion[side] - expected) <= expected * 1e-9,
+          `${m.id}.${side}: markedUp ${m.markedUpWeiPricePerMillion[side]} != base ${base} × ${1 + (rate as number)}`,
+        );
+      }
+    }
+  });
+
+  it("SHOULD surface that same rate through getRoutingFeeRate", { timeout: 10_000 }, async () => {
+    const cpi = (await getCpi()) as Record<string, unknown>;
+    assert.equal(await getRoutingFeeRate(), cpi.routingFeeRate);
+  });
+
+  it("SHOULD produce the same cost FOR a basket member and a catalog-only model that share provider prices — Bug guarded: basket membership must not move the cost of a model", { timeout: 15_000 }, async () => {
+    const basket = await getBasketPrices();
+    const catalog = (await getCatalog()) as { models: Array<Record<string, any>> };
+    const offIndex = catalog.models.filter((m) => m.indexMember === false);
+    assert.ok(offIndex.length > 0, "catalog must carry at least one non-index model");
+
+    const twin = offIndex.find((c) =>
+      basket.some(
+        (b) =>
+          b.base_input_usd_per_million === c.currentPrice.inputPriceUsdPerMillion &&
+          b.base_output_usd_per_million === c.currentPrice.outputPriceUsdPerMillion,
+      ),
+    );
+    assert.ok(twin, "expected a catalog-only model sharing provider prices with a basket member");
+
+    const member = basket.find(
+      (b) =>
+        b.base_input_usd_per_million === twin.currentPrice.inputPriceUsdPerMillion &&
+        b.base_output_usd_per_million === twin.currentPrice.outputPriceUsdPerMillion,
+    )!;
+    const [pricedMember, pricedTwin, rate] = await Promise.all([
+      resolveModelPrice(member.model),
+      resolveModelPrice(twin.modelKey),
+      getRoutingFeeRate(),
+    ]);
+    assert.ok(pricedMember !== null && pricedTwin !== null);
+    assert.equal(pricedMember.source, "oracle-basket");
+    assert.equal(pricedTwin.source, "oracle-catalog");
+    assert.deepEqual(
+      usdCost(pricedMember.price, 1_000_000, 1_000_000, rate),
+      usdCost(pricedTwin.price, 1_000_000, 1_000_000, rate),
+    );
   });
 });
 

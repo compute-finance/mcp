@@ -12,8 +12,9 @@ export interface BasketFieldMap {
   provider_name: string;
   family: string;
   released_at: string;
-  marked_up_usd_price: string;
-  marked_up_wei_price: string;
+  base_usd_price: string;
+  base_wei_price: string;
+  routing_fee_rate: string;
 }
 
 export interface ReconFieldMap {
@@ -41,8 +42,9 @@ export const DEFAULT_BASKET: BasketFieldMap = {
   provider_name: "name",
   family: "family",
   released_at: "releasedAt",
-  marked_up_usd_price: "markedUpUsdPricePerMillion",
-  marked_up_wei_price: "markedUpWeiPricePerMillion",
+  base_usd_price: "usdPricePerMillion",
+  base_wei_price: "weiPricePerMillion",
+  routing_fee_rate: "routingFeeRate",
 };
 
 const DEFAULT_RECON: ReconFieldMap = {
@@ -117,7 +119,10 @@ function findField(
 // ── Basket field derivation ─────────────────────────────────────────
 
 const BASKET_MATCHERS: Record<
-  Exclude<keyof BasketFieldMap, "models_array" | "provider_key" | "provider_name">,
+  Exclude<
+    keyof BasketFieldMap,
+    "models_array" | "provider_key" | "provider_name" | "routing_fee_rate"
+  >,
   MatchRule
 > = {
   model_id: { required: ["id"], type: "string", exclude: ["oracle", "prefix", "key"] },
@@ -125,16 +130,16 @@ const BASKET_MATCHERS: Record<
   provider: { required: ["provider"], type: "object" },
   family: { required: ["family"], exclude: ["count", "id"], type: "string" },
   released_at: { required: ["releas"], type: "string" },
-  marked_up_usd_price: {
+  base_usd_price: {
     required: ["usd"],
-    preferred: ["marked", "markup"],
+    exclude: ["marked", "markup"],
     type: "object",
     inputOutput: true,
   },
-  marked_up_wei_price: {
+  base_wei_price: {
     required: ["price"],
-    preferred: ["marked", "markup", "wei", "compute", "ct"],
-    exclude: ["usd"],
+    preferred: ["wei", "compute", "ct"],
+    exclude: ["usd", "marked", "markup"],
     type: "object",
     inputOutput: true,
   },
@@ -161,6 +166,25 @@ function deriveBasketMap(responseSchema: SchemaObj): {
       mismatches.push(`models_array: ${DEFAULT_BASKET.models_array} → ${models_array}`);
     } else {
       unmapped.push("models_array");
+    }
+  }
+
+  let routing_fee_rate = DEFAULT_BASKET.routing_fee_rate;
+  if (!(routing_fee_rate in topProps)) {
+    const found = Object.entries(topProps).find(([n, s]) => {
+      const low = n.toLowerCase();
+      return (
+        fieldType(s) === "number" &&
+        (low.includes("fee") || low.includes("markup") || low.includes("routing"))
+      );
+    });
+    if (found) {
+      routing_fee_rate = found[0];
+      mismatches.push(
+        `routing_fee_rate: ${DEFAULT_BASKET.routing_fee_rate} → ${routing_fee_rate}`,
+      );
+    } else {
+      unmapped.push("routing_fee_rate");
     }
   }
 
@@ -191,19 +215,19 @@ function deriveBasketMap(responseSchema: SchemaObj): {
   }
 
   // 3. Ensure wei price ≠ usd price
-  if (mapped.marked_up_wei_price === mapped.marked_up_usd_price) {
+  if (mapped.base_wei_price === mapped.base_usd_price) {
     for (const [name, schema] of Object.entries(modelProps)) {
-      if (name === mapped.marked_up_usd_price) continue;
+      if (name === mapped.base_usd_price) continue;
+      const low = name.toLowerCase();
       if (
         fieldType(schema) === "object" &&
         hasInputOutput(schema) &&
-        !name.toLowerCase().includes("usd") &&
-        name.toLowerCase().includes("marked")
+        !low.includes("usd") &&
+        !low.includes("marked") &&
+        !low.includes("markup")
       ) {
-        mapped.marked_up_wei_price = name;
-        mismatches.push(
-          `marked_up_wei_price: collision resolved → ${name}`,
-        );
+        mapped.base_wei_price = name;
+        mismatches.push(`base_wei_price: collision resolved → ${name}`);
         break;
       }
     }
@@ -249,8 +273,9 @@ function deriveBasketMap(responseSchema: SchemaObj): {
       provider_name,
       family: mapped.family,
       released_at: mapped.released_at,
-      marked_up_usd_price: mapped.marked_up_usd_price,
-      marked_up_wei_price: mapped.marked_up_wei_price,
+      base_usd_price: mapped.base_usd_price,
+      base_wei_price: mapped.base_wei_price,
+      routing_fee_rate,
     },
     mismatches,
     unmapped,
@@ -399,6 +424,17 @@ export function getFieldMap(): FieldMap {
 
 export function _resetFieldMap(): void {
   fieldMap = null;
+}
+
+export function _seedDefaultFieldMap(): void {
+  fieldMap = {
+    basket: DEFAULT_BASKET,
+    recon: DEFAULT_RECON,
+    source: "hardcoded",
+    derived_at: new Date().toISOString(),
+    mismatches: [],
+    unmapped: [],
+  };
 }
 
 export const _internals = {

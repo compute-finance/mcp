@@ -19,10 +19,10 @@ export interface ModelPrice {
   provider_name: string;
   family: string;
   released_at: string | null;
-  input_usd_per_million: number;
-  output_usd_per_million: number;
-  input_wei_per_million: number;
-  output_wei_per_million: number;
+  base_input_usd_per_million: number;
+  base_output_usd_per_million: number;
+  base_input_wei_per_million: number | null;
+  base_output_wei_per_million: number | null;
   cache: CachePricing | null;
 }
 
@@ -47,8 +47,8 @@ export interface ResolvedModel {
   resolved_key: string;
   family: string | null;
   provider: { key: string; name: string } | null;
-  input_usd_per_million: number | null;
-  output_usd_per_million: number | null;
+  base_input_usd_per_million: number | null;
+  base_output_usd_per_million: number | null;
   cache: CachePricing | null;
   in_basket: boolean;
   price_source: PriceSource;
