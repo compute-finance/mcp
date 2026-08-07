@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/compute-finance/mcp/compare/v0.8.0...v0.8.1) (2026-08-07)
+
+
+### Tests
+
+* keep pricing smoke aligned with the oracle source contract ([#53](https://github.com/compute-finance/mcp/issues/53)) ([d24356d](https://github.com/compute-finance/mcp/commit/d24356df015fa690750dedfc9211b2bc37cc7f40))
+
 ## [0.8.0](https://github.com/compute-finance/mcp/compare/v0.7.0...v0.8.0) (2026-08-03)
 
 
