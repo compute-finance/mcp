@@ -330,8 +330,14 @@ describe("smoke: data_get_model_price_history", () => {
       const first = points[0];
       assert.equal(typeof first.inputPriceUsdPerMillion, "number");
       assert.equal(typeof first.outputPriceUsdPerMillion, "number");
-      assert.equal(typeof first.revisionVersion, "number");
-      assert.equal(typeof first.metadataHash, "string");
+      assert.ok(
+        first.source === "manifest" || first.source === "catalog",
+        "source must be 'manifest' or 'catalog'",
+      );
+      if (first.source === "manifest") {
+        assert.equal(typeof first.revisionVersion, "number");
+        assert.equal(typeof first.metadataHash, "string");
+      }
     }
   });
 });
@@ -364,10 +370,18 @@ describe("smoke: data_get_model_price_at", () => {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const data = (await getModelPriceAt(sample.model, yesterday)) as Record<string, unknown>;
     assert.equal(data.modelKey, sample.model);
-    assert.ok(data.source === "manifest" || data.source === "providerCost", "source must be the discriminator literal");
+    assert.ok(
+      data.source === "manifest" || data.source === "catalog",
+      "source must be 'manifest' or 'catalog'",
+    );
     assert.equal(typeof data.inputPriceUsdPerMillion, "number");
     assert.equal(typeof data.outputPriceUsdPerMillion, "number");
     assert.equal(typeof data.observedAt, "string");
+    if (data.source === "manifest") {
+      assert.equal(typeof data.revisionVersion, "number");
+      assert.equal(typeof data.metadataHash, "string");
+      assert.equal(typeof data.family, "string");
+    }
   });
 });
 
