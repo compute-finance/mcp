@@ -23,6 +23,9 @@ import { usdCost } from "./oracle/pricing-wire.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { round } from "./render/format.js";
+import type { PriceProvenance } from "./oracle/types.js";
+
+const PROVENANCE_MARKS: PriceProvenance[] = ["verified", "inferred", "promotional"];
 
 before(async () => {
   await warmOpenApiCache();
@@ -65,12 +68,32 @@ describe("smoke: data_get_basket", () => {
         assert.equal(typeof c.usdPerMillion, "number", `${m.model}.${name}.usdPerMillion not a number`);
         assert.ok(c.usdPerMillion >= 0, `${m.model}.${name}.usdPerMillion negative`);
         assert.equal(typeof c.ratioOfInput, "number", `${m.model}.${name}.ratioOfInput not a number`);
-        assert.equal(typeof c.source, "string", `${m.model}.${name}.source not a string`);
-        assert.ok(c.source.length > 0, `${m.model}.${name}.source empty`);
+        assert.ok(
+          PROVENANCE_MARKS.includes(c.provenance),
+          `${m.model}.${name}.provenance is '${c.provenance}', not one of ${PROVENANCE_MARKS.join("/")}`,
+        );
       }
       withCache += 1;
     }
     assert.ok(withCache > 0, "no basket model carries a cache block — the cache pricing pipeline is broken");
+  });
+
+  it("publishes a marked reasoning output price where present, for at least one model", { timeout: 10_000 }, async () => {
+    const models = await getBasketPrices();
+    let withReasoning = 0;
+    for (const m of models) {
+      const c = m.reasoning?.reasoningOutput;
+      if (!c) continue;
+      assert.equal(typeof c.usdPerMillion, "number", `${m.model}.reasoningOutput.usdPerMillion not a number`);
+      assert.ok(c.usdPerMillion >= 0, `${m.model}.reasoningOutput.usdPerMillion negative`);
+      assert.equal(typeof c.ratioOfInput, "number", `${m.model}.reasoningOutput.ratioOfInput not a number`);
+      assert.ok(
+        PROVENANCE_MARKS.includes(c.provenance),
+        `${m.model}.reasoningOutput.provenance is '${c.provenance}'`,
+      );
+      withReasoning += 1;
+    }
+    assert.ok(withReasoning > 0, "no basket model carries a reasoning price — the reasoning pricing pipeline is broken");
   });
 });
 

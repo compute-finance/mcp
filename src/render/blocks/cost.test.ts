@@ -6,7 +6,8 @@ function costInput(overrides: Partial<CostBlockInput> = {}): CostBlockInput {
   return {
     effective_usd: 66.49,
     nominal_usd: 316.14,
-    cache_note: "Oracle cache multipliers: read 0.1× · write-5m 1.25× · write-1h 2×",
+    cache_multipliers_note:
+      "Oracle cache multipliers: read 0.1× · write-5m 1.25× · write-1h 2×",
     cache_pricing_missing: null,
     ...overrides,
   };
@@ -28,11 +29,18 @@ describe("renderCostBlock", () => {
     assert.match(savedLine, /\(−79%\)/);
   });
 
-  it("SHOULD drop cache note WHEN it is empty", () => {
-    const out = renderCostBlock(costInput({ cache_note: "" }));
+  it("SHOULD state that no cache pricing is published INSTEAD OF a zero saving WHEN the oracle publishes no multipliers — Bug guarded: 'Saved by caching: $0.0000' next to an unavailability note reads as two contradictory facts", () => {
+    const out = renderCostBlock(
+      costInput({
+        effective_usd: 12.5,
+        nominal_usd: 12.5,
+        cache_multipliers_note: null,
+      }),
+    );
+    assert.equal(out.length, 2);
     assert.equal(
-      out.some((l) => l.includes("multipliers")),
-      false,
+      out[1],
+      "  Nominal (no cache):       $12.50  ·  oracle publishes no cache pricing for this model",
     );
   });
 

@@ -1,6 +1,4 @@
-import { CachePriceComponent, CachePricing, ModelPrice } from "./types.js";
-
-export type CacheComponentKind = "cachedInput" | "cacheWrite5m" | "cacheWrite1h";
+import { CacheComponentKind, CachePricing, ModelPrice } from "./types.js";
 
 export class OracleCachePricingMissingError extends Error {
   constructor(
@@ -55,28 +53,25 @@ export interface EffectiveCost {
   notes: string[];
 }
 
-function formatSource(c: CachePriceComponent): string {
-  return c.sourceUrl ? `${c.source} — ${c.sourceUrl}` : c.source;
+export function cacheAttributionNote(cache: CachePricing | null): string | null {
+  const parts: string[] = [];
+  if (cache?.cachedInput) {
+    parts.push(`read ${cache.cachedInput.ratioOfInput}× (${cache.cachedInput.provenance})`);
+  }
+  if (cache?.cacheWrite5m) {
+    parts.push(`write-5m ${cache.cacheWrite5m.ratioOfInput}× (${cache.cacheWrite5m.provenance})`);
+  }
+  if (cache?.cacheWrite1h) {
+    parts.push(`write-1h ${cache.cacheWrite1h.ratioOfInput}× (${cache.cacheWrite1h.provenance})`);
+  }
+  if (parts.length === 0) return null;
+  return `Oracle cache multipliers: ${parts.join(" · ")}`;
 }
 
-function buildAttributionNotes(cache: CachePricing | null): string[] {
-  if (cache === null) {
-    return ["Cache pricing unavailable — oracle has not published a cache block for this model."];
-  }
-  const parts: string[] = [];
-  if (cache.cachedInput) {
-    parts.push(`read ${cache.cachedInput.ratioOfInput}× (${formatSource(cache.cachedInput)})`);
-  }
-  if (cache.cacheWrite5m) {
-    parts.push(`write-5m ${cache.cacheWrite5m.ratioOfInput}× (${formatSource(cache.cacheWrite5m)})`);
-  }
-  if (cache.cacheWrite1h) {
-    parts.push(`write-1h ${cache.cacheWrite1h.ratioOfInput}× (${formatSource(cache.cacheWrite1h)})`);
-  }
-  if (parts.length === 0) {
-    return ["Cache pricing unavailable — oracle published an empty cache block for this model."];
-  }
-  return [`Oracle cache multipliers: ${parts.join(" · ")}`];
+function cacheUnavailableNote(cache: CachePricing | null): string {
+  const reason =
+    cache === null ? "has not published a cache block" : "published an empty cache block";
+  return `Cache pricing unavailable — oracle ${reason} for this model.`;
 }
 
 export function effectiveCost(
@@ -120,7 +115,7 @@ export function effectiveCost(
       output_usd,
     },
     cache_attribution: price.cache,
-    notes: buildAttributionNotes(price.cache),
+    notes: [cacheAttributionNote(price.cache) ?? cacheUnavailableNote(price.cache)],
   };
 }
 

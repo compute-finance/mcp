@@ -16,6 +16,7 @@ function price(over: Partial<ModelPrice> = {}): ModelPrice {
     base_input_wei_per_million: 100,
     base_output_wei_per_million: 500,
     cache: null,
+    reasoning: null,
     ...over,
   };
 }

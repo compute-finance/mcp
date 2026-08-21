@@ -126,6 +126,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
         return textWithContext({
           ...withBilledPrices(priced.price, rate),
+          base_price_provenance: priced.base_price_provenance,
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,
@@ -205,6 +206,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           input_tokens: inT,
           output_tokens: outT,
           ...usdCost(priced.price, inT, outT, rate),
+          base_price_provenance: priced.base_price_provenance,
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,

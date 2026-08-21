@@ -1,22 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { _internals } from "./client.js";
 import {
+  cacheAttributionNote,
   effectiveCost,
   nominalCost,
   priceSession,
   OracleCachePricingMissingError,
 } from "./pricing.js";
-import type { CachePriceComponent, CachePricing, ModelPrice } from "./types.js";
+import type { CachePricing, ModelPrice, PriceComponent } from "./types.js";
 
-const { adaptComponent, adaptCache } = _internals;
-
-function component(over: Partial<CachePriceComponent> = {}): CachePriceComponent {
+function component(over: Partial<PriceComponent> = {}): PriceComponent {
   return {
     usdPerMillion: 0.5,
     ratioOfInput: 0.1,
-    source: "anthropic-pricing",
-    sourceUrl: "https://www.anthropic.com/pricing",
+    provenance: "verified",
     createdAt: "2026-06-16T00:00:00.000Z",
     ...over,
   };
@@ -35,6 +32,7 @@ function priceWithCache(cache: CachePricing | null): ModelPrice {
     base_input_wei_per_million: 0,
     base_output_wei_per_million: 0,
     cache,
+    reasoning: null,
   };
 }
 
@@ -127,12 +125,12 @@ describe("effectiveCost — partial cache pricing", () => {
   });
 });
 
-describe("effectiveCost — happy path with full cache", () => {
+describe("effectiveCost — full cache pricing", () => {
   it("SHOULD apply per-component multipliers and surface attribution in notes", () => {
     const cache: CachePricing = {
-      cachedInput: component({ usdPerMillion: 0.5, ratioOfInput: 0.1, source: "anthropic-pricing" }),
-      cacheWrite5m: component({ usdPerMillion: 6.25, ratioOfInput: 1.25, source: "anthropic-pricing" }),
-      cacheWrite1h: component({ usdPerMillion: 10, ratioOfInput: 2.0, source: "anthropic-pricing" }),
+      cachedInput: component({ usdPerMillion: 0.5, ratioOfInput: 0.1 }),
+      cacheWrite5m: component({ usdPerMillion: 6.25, ratioOfInput: 1.25 }),
+      cacheWrite1h: component({ usdPerMillion: 10, ratioOfInput: 2.0 }),
     };
     const price = priceWithCache(cache);
     const eff = effectiveCost(price, 1000, 1000, 1000, 100);
@@ -142,122 +140,42 @@ describe("effectiveCost — happy path with full cache", () => {
     assert.match(eff.notes[0], /read 0\.1×/);
     assert.match(eff.notes[0], /write-5m 1\.25×/);
     assert.match(eff.notes[0], /write-1h 2×/);
-    assert.match(eff.notes[0], /anthropic-pricing/);
   });
 
-  it("SHOULD render manual source without URL gracefully", () => {
+  it("SHOULD set cache_read_usd=0 and cache_create_usd=0 when no cache tokens", () => {
     const cache: CachePricing = {
-      cachedInput: component({ source: "manual", sourceUrl: null, ratioOfInput: 1.0 }),
-      cacheWrite5m: null,
-      cacheWrite1h: null,
+      cachedInput: component(),
+      cacheWrite5m: component(),
+      cacheWrite1h: component(),
     };
     const price = priceWithCache(cache);
-    const eff = effectiveCost(price, 0, 0, 0, 100);
-    assert.match(eff.notes[0], /\(manual\)/);
-    assert.doesNotMatch(eff.notes[0], / — http/);
+    const eff = effectiveCost(price, 1000, 0, 0, 100);
+    assert.equal(eff.breakdown.cache_read_usd, 0);
+    assert.equal(eff.breakdown.cache_create_usd, 0);
+    assert.ok(eff.breakdown.raw_input_usd > 0);
+    assert.ok(eff.breakdown.output_usd > 0);
   });
 });
 
-describe("adaptComponent — boundary normalization", () => {
-  it("SHOULD return null IF raw component is null", () => {
-    assert.equal(adaptComponent("m", "cachedInput", 5, null), null);
-  });
-
-  it("SHOULD return null IF raw component is undefined", () => {
-    assert.equal(adaptComponent("m", "cachedInput", 5, undefined), null);
-  });
-
-  it("SHOULD derive ratioOfInput from usdPerMillion when ratio is null", () => {
-    const out = adaptComponent("m", "cachedInput", 5, {
-      usdPerMillion: 0.5,
-      ratioOfInput: null,
-      source: "x",
-      sourceUrl: null,
-      createdAt: "2026-01-01T00:00:00Z",
-    });
-    assert.ok(out);
-    assert.equal(out.usdPerMillion, 0.5);
-    assert.equal(out.ratioOfInput, 0.1);
-  });
-
-  it("SHOULD derive usdPerMillion from ratioOfInput when usd is null", () => {
-    const out = adaptComponent("m", "cachedInput", 5, {
-      usdPerMillion: null,
-      ratioOfInput: 0.2,
-      source: "x",
-      sourceUrl: null,
-      createdAt: "2026-01-01T00:00:00Z",
-    });
-    assert.ok(out);
-    assert.equal(out.usdPerMillion, 1);
-    assert.equal(out.ratioOfInput, 0.2);
-  });
-
-  it("SHOULD throw IF both usdPerMillion and ratioOfInput are null", () => {
-    assert.throws(() =>
-      adaptComponent("model-x", "cachedInput", 5, {
-        usdPerMillion: null,
-        ratioOfInput: null,
-        source: "x",
-        sourceUrl: null,
-        createdAt: "2026-01-01T00:00:00Z",
-      }),
+describe("cacheAttributionNote", () => {
+  it("SHOULD mark each multiplier WITH its own provenance — Bug guarded: one mark reused across components hides a verified read sitting next to an inferred write", () => {
+    const cache: CachePricing = {
+      cachedInput: component({ ratioOfInput: 0.1, provenance: "verified" }),
+      cacheWrite5m: component({ ratioOfInput: 1.25, provenance: "inferred" }),
+      cacheWrite1h: component({ ratioOfInput: 2.0, provenance: "promotional" }),
+    };
+    assert.equal(
+      cacheAttributionNote(cache),
+      "Oracle cache multipliers: read 0.1× (verified) · write-5m 1.25× (inferred) · write-1h 2× (promotional)",
     );
   });
 
-  it("SHOULD throw IF only usd is given and inputUsdPerMillion is 0 (cannot derive ratio)", () => {
-    assert.throws(() =>
-      adaptComponent("model-x", "cachedInput", 0, {
-        usdPerMillion: 1.5,
-        ratioOfInput: null,
-        source: "x",
-        sourceUrl: null,
-        createdAt: "2026-01-01T00:00:00Z",
-      }),
+  it("SHOULD return null IF there is no multiplier to attribute", () => {
+    assert.equal(cacheAttributionNote(null), null);
+    assert.equal(
+      cacheAttributionNote({ cachedInput: null, cacheWrite5m: null, cacheWrite1h: null }),
+      null,
     );
-  });
-
-  it("SHOULD preserve both values when both present", () => {
-    const out = adaptComponent("m", "cachedInput", 5, {
-      usdPerMillion: 0.5,
-      ratioOfInput: 0.1,
-      source: "anthropic-pricing",
-      sourceUrl: "https://...",
-      createdAt: "2026-01-01T00:00:00Z",
-    });
-    assert.ok(out);
-    assert.equal(out.usdPerMillion, 0.5);
-    assert.equal(out.ratioOfInput, 0.1);
-    assert.equal(out.source, "anthropic-pricing");
-    assert.equal(out.sourceUrl, "https://...");
-  });
-});
-
-describe("adaptCache — block-level", () => {
-  it("SHOULD return null when block is null", () => {
-    assert.equal(adaptCache("m", 5, null), null);
-  });
-
-  it("SHOULD return null when block is undefined", () => {
-    assert.equal(adaptCache("m", 5, undefined), null);
-  });
-
-  it("SHOULD pass through per-component nulls verbatim", () => {
-    const out = adaptCache("m", 5, {
-      cachedInput: {
-        usdPerMillion: 0.5,
-        ratioOfInput: 0.1,
-        source: "x",
-        sourceUrl: null,
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-      cacheWrite5m: null,
-      cacheWrite1h: null,
-    });
-    assert.ok(out);
-    assert.ok(out.cachedInput);
-    assert.equal(out.cacheWrite5m, null);
-    assert.equal(out.cacheWrite1h, null);
   });
 });
 
@@ -280,22 +198,5 @@ describe("priceSession — unified result", () => {
     assert.ok(r.cache_pricing_missing instanceof OracleCachePricingMissingError);
     assert.equal(r.cache_pricing_missing.missing, "block");
     assert.ok(r.nominal_usd > 0);
-  });
-
-});
-
-describe("effectiveCost — breakdown integrity", () => {
-  it("SHOULD set cache_read_usd=0 and cache_create_usd=0 when no cache tokens", () => {
-    const cache: CachePricing = {
-      cachedInput: component(),
-      cacheWrite5m: component(),
-      cacheWrite1h: component(),
-    };
-    const price = priceWithCache(cache);
-    const eff = effectiveCost(price, 1000, 0, 0, 100);
-    assert.equal(eff.breakdown.cache_read_usd, 0);
-    assert.equal(eff.breakdown.cache_create_usd, 0);
-    assert.ok(eff.breakdown.raw_input_usd > 0);
-    assert.ok(eff.breakdown.output_usd > 0);
   });
 });

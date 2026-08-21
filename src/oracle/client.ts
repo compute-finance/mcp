@@ -1,15 +1,18 @@
 import {
-  CachePriceComponent,
+  BasePriceProvenance,
   CachePricing,
   ModelPrice,
   OracleCacheBlock,
-  OracleCacheComponentWire,
+  OraclePriceComponentWire,
+  OracleReasoningBlock,
+  PriceComponent,
+  PriceComponentKind,
   PriceSource,
+  ReasoningPricing,
   ResolvedModel,
   ScuFamilyRepresentative,
   ScuValue,
 } from "./types.js";
-import { CacheComponentKind } from "./pricing.js";
 import { getFieldMap } from "./field-map.js";
 import { trimFloatNoise } from "../render/format.js";
 
@@ -27,7 +30,13 @@ let scuCache: CacheEntry<unknown> | null = null;
 let reconstitutionsCache: CacheEntry<unknown> | null = null;
 let methodologyCache: CacheEntry<unknown> | null = null;
 let basketCache: CacheEntry<ModelPrice[]> | null = null;
-const familyDriftWarned = new Set<string>();
+const driftWarned = new Set<string>();
+
+function warnDriftOnce(key: string, message: string): void {
+  if (driftWarned.has(key)) return;
+  driftWarned.add(key);
+  process.stderr.write(`[oracle] ${message}\n`);
+}
 
 async function fetchJson(path: string): Promise<unknown> {
   const res = await fetch(`${API_BASE}${path}`);
@@ -237,10 +246,10 @@ function inputOutput(obj: unknown): { input: number; output: number } {
 
 function adaptComponent(
   model: string,
-  kind: CacheComponentKind,
+  kind: PriceComponentKind,
   inputUsdPerMillion: number,
-  raw: OracleCacheComponentWire | null | undefined,
-): CachePriceComponent | null {
+  raw: OraclePriceComponentWire | null | undefined,
+): PriceComponent | null {
   if (raw === null || raw === undefined) return null;
   let { usdPerMillion, ratioOfInput } = raw;
   if (usdPerMillion === null && ratioOfInput !== null) {
@@ -250,7 +259,7 @@ function adaptComponent(
   }
   if (usdPerMillion === null || ratioOfInput === null) {
     throw new Error(
-      `Oracle cache component ${model}.${kind} is unusable: ` +
+      `Oracle price component ${model}.${kind} is unusable: ` +
         "both usdPerMillion and ratioOfInput are null (or ratioOfInput requires inputUsdPerMillion > 0 to derive). " +
         "This points to a corrupted oracle row — investigate the producer.",
     );
@@ -258,8 +267,7 @@ function adaptComponent(
   return {
     usdPerMillion,
     ratioOfInput,
-    source: raw.source,
-    sourceUrl: raw.sourceUrl,
+    provenance: raw.provenance,
     createdAt: raw.createdAt,
   };
 }
@@ -275,6 +283,31 @@ function adaptCache(
     cacheWrite5m: adaptComponent(model, "cacheWrite5m", inputUsdPerMillion, block.cacheWrite5m),
     cacheWrite1h: adaptComponent(model, "cacheWrite1h", inputUsdPerMillion, block.cacheWrite1h),
   };
+}
+
+// Nothing bills on reasoning, so a corrupt row degrades instead of failing the response.
+function adaptReasoning(
+  model: string,
+  inputUsdPerMillion: number,
+  block: OracleReasoningBlock | null | undefined,
+): ReasoningPricing | null {
+  if (block === null || block === undefined) return null;
+  try {
+    return {
+      reasoningOutput: adaptComponent(
+        model,
+        "reasoningOutput",
+        inputUsdPerMillion,
+        block.reasoningOutput,
+      ),
+    };
+  } catch (err) {
+    warnDriftOnce(
+      `reasoning:${model}`,
+      `${(err as Error).message} Reporting no reasoning price for ${model}.`,
+    );
+    return null;
+  }
 }
 
 export async function getBasketPrices(): Promise<ModelPrice[]> {
@@ -293,11 +326,12 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
     const baseUsd = inputOutput(m[fm.base_usd_price]);
     const baseWei = inputOutput(m[fm.base_wei_price]);
     const rawCache = (m.cache ?? null) as OracleCacheBlock | null;
+    const rawReasoning = (m.reasoning ?? null) as OracleReasoningBlock | null;
     const family = m[fm.family] as string | undefined;
-    if (!family && !familyDriftWarned.has(id)) {
-      familyDriftWarned.add(id);
-      process.stderr.write(
-        `[oracle] basket model ${id} missing required family field — upstream schema drift\n`,
+    if (!family) {
+      warnDriftOnce(
+        `family:${id}`,
+        `basket model ${id} missing required family field — upstream schema drift`,
       );
     }
     out.push({
@@ -312,6 +346,7 @@ export async function getBasketPrices(): Promise<ModelPrice[]> {
       base_input_wei_per_million: baseWei.input,
       base_output_wei_per_million: baseWei.output,
       cache: adaptCache(id, baseUsd.input, rawCache),
+      reasoning: adaptReasoning(id, baseUsd.input, rawReasoning),
     });
   }
   basketCache = { data: out, fetchedAt: Date.now() };
@@ -328,8 +363,13 @@ interface WireResolveResponse {
   resolvedKey: string;
   family: string | null;
   provider: { key: string; name: string } | null;
-  prices: { inputUsdPerMillion: number; outputUsdPerMillion: number } | null;
+  prices: {
+    inputUsdPerMillion: number;
+    outputUsdPerMillion: number;
+    provenance: BasePriceProvenance;
+  } | null;
   cache: OracleCacheBlock | null;
+  reasoning: OracleReasoningBlock | null;
   inBasket: boolean;
   priceSource: PriceSource;
 }
@@ -345,7 +385,9 @@ function adaptResolved(wire: WireResolveResponse): ResolvedModel {
     provider: wire.provider,
     base_input_usd_per_million: wire.prices?.inputUsdPerMillion ?? null,
     base_output_usd_per_million: wire.prices?.outputUsdPerMillion ?? null,
+    base_price_provenance: wire.prices?.provenance ?? null,
     cache: adaptCache(wire.resolvedKey, inputUsd, wire.cache),
+    reasoning: adaptReasoning(wire.resolvedKey, inputUsd, wire.reasoning),
     in_basket: wire.inBasket,
     price_source: wire.priceSource,
   };
@@ -388,6 +430,7 @@ export function _seedBasketCache(models: ModelPrice[]): void {
 export interface ResolvedModelPrice {
   price: ModelPrice;
   source: Exclude<PriceSource, "off-basket">;
+  base_price_provenance: BasePriceProvenance | null;
 }
 
 export async function resolveModelPrice(
@@ -397,10 +440,16 @@ export async function resolveModelPrice(
   if (!resolved || resolved.price_source === "off-basket") return null;
   const source = resolved.price_source;
   if (resolved.in_basket) {
-    const basketEntry = await getModelPrice(resolved.resolved_key);
-    if (basketEntry) return { price: basketEntry, source };
+    const manifestEntry = await getModelPrice(resolved.resolved_key);
+    if (manifestEntry) {
+      return { price: manifestEntry, source, base_price_provenance: null };
+    }
   }
-  return { price: resolvedToModelPrice(resolved), source };
+  return {
+    price: resolvedToModelPrice(resolved),
+    source,
+    base_price_provenance: resolved.base_price_provenance,
+  };
 }
 
 export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
@@ -416,11 +465,13 @@ export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
     base_input_wei_per_million: null,
     base_output_wei_per_million: null,
     cache: r.cache,
+    reasoning: r.reasoning,
   };
 }
 
 export const _internals = {
   adaptComponent,
   adaptCache,
+  adaptReasoning,
   parseFamilyRepresentatives,
 };
