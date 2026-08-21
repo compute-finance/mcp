@@ -1,7 +1,7 @@
 import { costUsd } from "./pricing.js";
 import { applyRoutingFee } from "./routing-fee.js";
 import { round } from "../render/format.js";
-import type { ModelPrice } from "./types.js";
+import type { BaseRates, ModelPrice } from "./types.js";
 
 export const PRICING_NOTE =
   "base_* is the provider list price, identical for every model the oracle tracks. " +
@@ -16,7 +16,7 @@ export interface BilledPrices {
   billed_output_wei_per_million: number | null;
 }
 
-function billed(base: number | null, rate: number | null): number | null {
+export function billed(base: number | null, rate: number | null): number | null {
   return base === null || rate === null ? null : applyRoutingFee(base, rate);
 }
 
@@ -40,12 +40,12 @@ export interface UsdCost {
 }
 
 export function usdCost(
-  price: ModelPrice,
+  rates: BaseRates,
   inputTokens: number,
   outputTokens: number,
   rate: number | null,
 ): UsdCost {
-  const base_usd_cost = round(costUsd(price, inputTokens, outputTokens), 6);
+  const base_usd_cost = round(costUsd(rates, inputTokens, outputTokens), 6);
   if (rate === null) {
     return { base_usd_cost, routing_fee_usd: null, billed_usd_cost: null };
   }

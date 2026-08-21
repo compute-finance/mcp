@@ -1,6 +1,7 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import {
+  API_BASE,
   getBasketPrices,
   getModelPrice,
   getScu,
@@ -20,12 +21,16 @@ import {
 import { costUsd } from "./oracle/pricing.js";
 import { getRoutingFeeRate } from "./oracle/routing-fee.js";
 import { usdCost } from "./oracle/pricing-wire.js";
+import {
+  getCatalogContexts,
+  modelContext,
+  quoteAtContextTier,
+  requireContextFor,
+} from "./oracle/context-tiers.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { round } from "./render/format.js";
-import type { PriceProvenance } from "./oracle/types.js";
-
-const PROVENANCE_MARKS: PriceProvenance[] = ["verified", "inferred", "promotional"];
+import { PROVENANCE_MARKS } from "./oracle/types.js";
 
 before(async () => {
   await warmOpenApiCache();
@@ -407,6 +412,132 @@ describe("smoke: data_get_catalog", () => {
     assert.equal(typeof cp.inputPriceUsdPerMillion, "number");
     assert.equal(typeof cp.outputPriceUsdPerMillion, "number");
     assert.equal(typeof cp.observedAt, "string");
+  });
+});
+
+describe("smoke: context price ladder", () => {
+  it("SHOULD publish contextTiers only as a non-empty, strictly ascending, marked array — Bug guarded: the ladder is read in published order, so an unsorted, duplicated or unmarked rung is quoted at the wrong input size", { timeout: 10_000 }, async (t) => {
+    const catalog = (await getCatalog()) as { models: Array<Record<string, any>> };
+    const laddered = catalog.models.filter((m) => "contextTiers" in m);
+    if (laddered.length === 0) return t.skip("no catalog model publishes contextTiers");
+    for (const m of laddered) {
+      const tiers = m.contextTiers;
+      assert.ok(Array.isArray(tiers), `${m.modelKey}: contextTiers must be an array`);
+      assert.ok(tiers.length > 0, `${m.modelKey}: contextTiers present but empty`);
+      let previous = 0;
+      for (const rung of tiers) {
+        assert.ok(
+          Number.isInteger(rung.fromInputTokens) && rung.fromInputTokens > previous,
+          `${m.modelKey}: fromInputTokens ${rung.fromInputTokens} must be a positive integer above ${previous}`,
+        );
+        previous = rung.fromInputTokens;
+        assert.equal(typeof rung.inputPriceUsdPerMillion, "number", `${m.modelKey}: rung input price`);
+        assert.equal(typeof rung.outputPriceUsdPerMillion, "number", `${m.modelKey}: rung output price`);
+        assert.ok(
+          PROVENANCE_MARKS.includes(rung.provenance),
+          `${m.modelKey}: rung provenance is '${rung.provenance}', not one of ${PROVENANCE_MARKS.join("/")}`,
+        );
+      }
+    }
+  });
+
+  it("SHOULD publish the ladder on the catalogue alone, out of every endpoint serving a per-model price — Bug guarded: a second publisher of the same rungs is a second source of truth that can disagree with the bill", { timeout: 15_000 }, async () => {
+    const contexts = await getCatalogContexts();
+    const laddered = [...contexts].find(([, c]) => c.tiers.length > 0);
+    const modelKey = laddered?.[0] ?? [...contexts.keys()][0];
+    assert.ok(modelKey, "catalog must carry at least one model");
+
+    const resolveRes = await fetch(
+      `${API_BASE}/v1/oracle/resolve/${encodeURIComponent(modelKey)}`,
+    );
+    assert.ok(resolveRes.ok, `/v1/oracle/resolve returned ${resolveRes.status}`);
+    const [resolved, basket, priceAt, priceHistory] = await Promise.all([
+      resolveRes.json(),
+      getCpi(),
+      getModelPriceAt(modelKey, new Date(Date.now() - 60_000).toISOString()),
+      getModelPriceHistory(modelKey),
+    ]);
+
+    for (const [endpoint, body] of [
+      ["/v1/oracle/resolve", resolved],
+      ["/v1/oracle/basket", basket],
+      ["/price-at", priceAt],
+      ["/price-history", priceHistory],
+    ] as const) {
+      assert.ok(
+        !JSON.stringify(body).includes("contextTiers"),
+        `${endpoint} publishes the ladder for ${modelKey} — the catalogue must stay its only source`,
+      );
+    }
+  });
+
+  it("SHOULD switch a live tiered model onto its higher rung exactly at the threshold — Bug guarded: half-open ranges are what make an estimate match the bill at the boundary", { timeout: 15_000 }, async (t) => {
+    const [contexts, rate] = await Promise.all([getCatalogContexts(), getRoutingFeeRate()]);
+    const laddered = [...contexts].find(([, c]) => c.tiers.length > 0);
+    if (!laddered) return t.skip("no catalog model publishes contextTiers");
+    const [modelKey, context] = laddered;
+
+    const priced = await resolveModelPrice(modelKey);
+    assert.ok(priced !== null, `${modelKey} must resolve to a price`);
+    const threshold = context.tiers[0].fromInputTokens;
+    const quote = (inputTokens: number) =>
+      quoteAtContextTier(
+        priced.price,
+        priced.base_price_provenance,
+        context,
+        rate,
+        inputTokens,
+        0,
+      );
+
+    const flat = quote(threshold - 1).applied_context_tier;
+    const higher = quote(threshold).applied_context_tier;
+    assert.equal(flat.from_input_tokens, 0);
+    assert.equal(higher.from_input_tokens, threshold);
+    assert.ok(
+      higher.base_input_usd_per_million !== flat.base_input_usd_per_million ||
+        higher.base_output_usd_per_million !== flat.base_output_usd_per_million,
+      `${modelKey}: the rung at ${threshold} restates the flat rate on both sides, so crossing it moves no price`,
+    );
+  });
+
+  it("SHOULD list every basket model in the catalogue AND start its ladder at its own flat rate — Bug guarded: a flat model must still ship one rung so no caller branches on whether a model happens to be tiered, and a basket member the catalogue omits is drift the compute tools refuse to quote through", { timeout: 15_000 }, async () => {
+    const [contexts, basket, rate] = await Promise.all([
+      getCatalogContexts(),
+      getBasketPrices(),
+      getRoutingFeeRate(),
+    ]);
+    for (const m of basket) {
+      const { context_tiers } = modelContext(
+        m,
+        null,
+        requireContextFor(contexts, m.model),
+        rate,
+      );
+      assert.equal(context_tiers[0].from_input_tokens, 0, `${m.model}: ladder must start at 0`);
+      assert.equal(
+        context_tiers[0].base_input_usd_per_million,
+        m.base_input_usd_per_million,
+        `${m.model}: first rung must restate the flat input rate`,
+      );
+      assert.equal(
+        context_tiers[0].base_output_usd_per_million,
+        m.base_output_usd_per_million,
+        `${m.model}: first rung must restate the flat output rate`,
+      );
+    }
+  });
+
+  it("SHOULD publish maxInputTokens as a positive integer wherever a model declares a ceiling", { timeout: 10_000 }, async (t) => {
+    const catalog = (await getCatalog()) as { models: Array<Record<string, any>> };
+    const capped = catalog.models.filter((m) => "maxInputTokens" in m);
+    if (capped.length === 0) return t.skip("no catalog model declares maxInputTokens");
+    for (const m of capped) {
+      assert.ok(
+        Number.isInteger(m.maxInputTokens) && m.maxInputTokens > 0,
+        `${m.modelKey}: maxInputTokens ${m.maxInputTokens} must be a positive integer`,
+      );
+    }
   });
 });
 

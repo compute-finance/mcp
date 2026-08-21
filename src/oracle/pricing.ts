@@ -1,4 +1,4 @@
-import { CacheComponentKind, CachePricing, ModelPrice } from "./types.js";
+import { BaseRates, CacheComponentKind, CachePricing, ModelPrice } from "./types.js";
 
 export class OracleCachePricingMissingError extends Error {
   constructor(
@@ -18,13 +18,13 @@ export class OracleCachePricingMissingError extends Error {
 }
 
 export function costUsd(
-  price: ModelPrice,
+  rates: BaseRates,
   inputTokens: number,
   outputTokens: number,
 ): number {
   return (
-    (inputTokens / 1_000_000) * price.base_input_usd_per_million +
-    (outputTokens / 1_000_000) * price.base_output_usd_per_million
+    (inputTokens / 1_000_000) * rates.base_input_usd_per_million +
+    (outputTokens / 1_000_000) * rates.base_output_usd_per_million
   );
 }
 
