@@ -55,7 +55,7 @@ describe("resolveModel", () => {
     mockFetch(() =>
       jsonResponse({
         inputKey: "claude-opus-4-8",
-        resolvedKey: "claude-opus-4.8",
+        resolvedKey: "anthropic/claude-opus-4.8",
         family: "anthropic.claude-opus",
         provider: { key: "anthropic", name: "Anthropic" },
         prices: {
@@ -79,7 +79,7 @@ describe("resolveModel", () => {
     );
     const r = await resolveModel("claude-opus-4-8");
     assert.ok(r !== null);
-    assert.equal(r.resolved_key, "claude-opus-4.8");
+    assert.equal(r.resolved_key, "anthropic/claude-opus-4.8");
     assert.equal(r.input_key, "claude-opus-4-8");
     assert.equal(r.in_basket, true);
     assert.equal(r.price_source, "oracle-basket");
@@ -121,8 +121,8 @@ describe("resolveModel", () => {
     mockFetch(() => {
       calls += 1;
       return jsonResponse({
-        inputKey: "claude-opus-4.8",
-        resolvedKey: "claude-opus-4.8",
+        inputKey: "anthropic/claude-opus-4.8",
+        resolvedKey: "anthropic/claude-opus-4.8",
         family: "anthropic.claude-opus",
         provider: { key: "anthropic", name: "Anthropic" },
         prices: { inputUsdPerMillion: 15, outputUsdPerMillion: 75 },
@@ -131,9 +131,9 @@ describe("resolveModel", () => {
         priceSource: "oracle-basket",
       });
     });
-    await resolveModel("claude-opus-4.8");
-    await resolveModel("claude-opus-4.8");
-    await resolveModel("claude-opus-4.8");
+    await resolveModel("anthropic/claude-opus-4.8");
+    await resolveModel("anthropic/claude-opus-4.8");
+    await resolveModel("anthropic/claude-opus-4.8");
     assert.equal(calls, 1);
   });
 
@@ -186,7 +186,7 @@ describe("resolveModelPrice", () => {
   function resolveWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       inputKey: "some-model",
-      resolvedKey: "some-model",
+      resolvedKey: "openai/some-model",
       family: "some.family",
       provider: { key: "openai", name: "OpenAI" },
       prices: { inputUsdPerMillion: 3, outputUsdPerMillion: 12 },
@@ -199,7 +199,7 @@ describe("resolveModelPrice", () => {
 
   function basketEntry(over: Partial<ModelPrice> = {}): ModelPrice {
     return {
-      model: "claude-opus-4.8",
+      model: "anthropic/claude-opus-4.8",
       display_name: "Claude Opus 4.8",
       provider: "anthropic",
       provider_name: "Anthropic",
@@ -233,7 +233,7 @@ describe("resolveModelPrice", () => {
       jsonResponse(
         resolveWire({
           inputKey: "gpt-x-preview",
-          resolvedKey: "gpt-x-preview",
+          resolvedKey: "openai/gpt-x-preview",
           priceSource: "oracle-catalog",
           inBasket: false,
         }),
@@ -242,14 +242,14 @@ describe("resolveModelPrice", () => {
     const priced = await resolveModelPrice("gpt-x-preview");
     assert.ok(priced !== null);
     assert.equal(priced.source, "oracle-catalog");
-    assert.equal(priced.price.model, "gpt-x-preview");
+    assert.equal(priced.price.model, "openai/gpt-x-preview");
     assert.equal(priced.price.base_input_usd_per_million, 3);
     assert.equal(priced.price.base_output_usd_per_million, 12);
   });
 
   it("SHOULD return null IF the resolve request fails — Bug guarded: a 5xx must not surface as a fabricated zero-price entry", async () => {
     mockFetch(() => new Response("oops", { status: 503 }));
-    assert.equal(await resolveModelPrice("claude-opus-4.7"), null);
+    assert.equal(await resolveModelPrice("anthropic/claude-opus-4.7"), null);
   });
 
   it("SHOULD enrich WITH the full basket entry (wei prices, display name) FOR an oracle-basket model", async () => {
@@ -258,7 +258,7 @@ describe("resolveModelPrice", () => {
       jsonResponse(
         resolveWire({
           inputKey: "claude-opus-4-8",
-          resolvedKey: "claude-opus-4.8",
+          resolvedKey: "anthropic/claude-opus-4.8",
           family: "anthropic.claude-opus",
           provider: { key: "anthropic", name: "Anthropic" },
           prices: { inputUsdPerMillion: 15, outputUsdPerMillion: 75 },
@@ -270,7 +270,7 @@ describe("resolveModelPrice", () => {
     const priced = await resolveModelPrice("claude-opus-4-8");
     assert.ok(priced !== null);
     assert.equal(priced.source, "oracle-basket");
-    assert.equal(priced.price.model, "claude-opus-4.8");
+    assert.equal(priced.price.model, "anthropic/claude-opus-4.8");
     assert.equal(priced.price.display_name, "Claude Opus 4.8");
     assert.equal(priced.price.base_input_wei_per_million, 15_000_000);
     assert.equal(priced.price.base_output_wei_per_million, 75_000_000);
@@ -281,7 +281,7 @@ describe("resolveModelPrice", () => {
     mockFetch(() =>
       jsonResponse(
         resolveWire({
-          resolvedKey: "claude-opus-4.8",
+          resolvedKey: "anthropic/claude-opus-4.8",
           inBasket: true,
           priceSource: "oracle-basket",
         }),
@@ -290,7 +290,7 @@ describe("resolveModelPrice", () => {
     const priced = await resolveModelPrice("claude-opus-4-8");
     assert.ok(priced !== null);
     assert.equal(priced.source, "oracle-basket");
-    assert.equal(priced.price.model, "claude-opus-4.8");
+    assert.equal(priced.price.model, "anthropic/claude-opus-4.8");
     assert.equal(priced.price.base_input_wei_per_million, null);
   });
 });
@@ -300,7 +300,7 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
     routingFeeRate: 0.05,
     models: [
       {
-        id: "claude-opus-5",
+        id: "anthropic/claude-opus-5",
         displayName: "Claude Opus 5",
         provider: { key: "anthropic", name: "Anthropic" },
         family: "anthropic.claude-opus",
@@ -317,7 +317,7 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
   function serveBasketAndResolve(url: string): Response {
     if (url.includes("/v1/oracle/basket")) return jsonResponse(BASKET_WIRE);
     const key = decodeURIComponent(url.split("/").pop()!);
-    const inBasket = key === "claude-opus-5";
+    const inBasket = key === "anthropic/claude-opus-5";
     return jsonResponse({
       inputKey: key,
       resolvedKey: key,
@@ -332,8 +332,8 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
 
   it("SHOULD return the provider list price FOR both a basket member and a catalog-only model that share it — Bug guarded: pricing a basket member from the marked-up field makes it 5% pricier than an identically priced catalog model", async () => {
     mockFetch(serveBasketAndResolve);
-    const member = await resolveModelPrice("claude-opus-5");
-    const catalogOnly = await resolveModelPrice("claude-opus-4.7");
+    const member = await resolveModelPrice("anthropic/claude-opus-5");
+    const catalogOnly = await resolveModelPrice("anthropic/claude-opus-4.7");
 
     assert.ok(member !== null && catalogOnly !== null);
     assert.equal(member.source, "oracle-basket");
@@ -352,8 +352,8 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
 
   it("SHOULD still enrich the basket member WITH wei prices the catalog cannot supply", async () => {
     mockFetch(serveBasketAndResolve);
-    const member = await resolveModelPrice("claude-opus-5");
-    const catalogOnly = await resolveModelPrice("claude-opus-4.7");
+    const member = await resolveModelPrice("anthropic/claude-opus-5");
+    const catalogOnly = await resolveModelPrice("anthropic/claude-opus-4.7");
     assert.equal(member!.price.base_input_wei_per_million, 100);
     assert.equal(catalogOnly!.price.base_input_wei_per_million, null);
   });
@@ -365,7 +365,7 @@ describe("resolvedToModelPrice", () => {
   ): ResolvedModel {
     return {
       input_key: "claude-opus-4.8",
-      resolved_key: "claude-opus-4.8",
+      resolved_key: "anthropic/claude-opus-4.8",
       family: "anthropic.claude-opus",
       provider: { key: "anthropic", name: "Anthropic" },
       base_input_usd_per_million: 15,

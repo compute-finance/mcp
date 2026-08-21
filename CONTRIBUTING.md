@@ -40,7 +40,7 @@ This repo uses [Conventional Commits](https://www.conventionalcommits.org/) — 
 Breaking changes: append `!` after the type (`feat!: …`) or include a `BREAKING CHANGE:` footer. While the package is pre-1.0, breaking changes bump the **minor** version, not major.
 
 Examples:
-- `fix: handle empty basket response from oracle (CF-330)`
+- `fix: handle empty basket response from oracle`
 - `feat: add render_session_report tool`
 - `docs: clarify cost hook guards in README`
 

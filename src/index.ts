@@ -40,17 +40,13 @@ import {
   usdCost,
   withBilledPrices,
 } from "./oracle/pricing-wire.js";
-import {
-  getAllOracleToolSchemas,
-  getAllOracleToolResponseSchemas,
-  isOracleBackedTool,
-  warmOpenApiCache,
-} from "./oracle/openapi-schema.js";
+import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { renderSessionReport } from "./render/session_report.js";
 import { renderConsumptionReport } from "./render/consumption_report.js";
 import { renderActiveSessions } from "./render/sessions_list.js";
-import { toolDefinitions, ToolDef } from "./tools/definitions.js";
+import { buildTools } from "./tools/build.js";
+import { ToolDef } from "./tools/definitions.js";
 import {
   requireString,
   requireFiniteNumber,
@@ -72,28 +68,6 @@ const server = new Server(
   { name: "@compute-finance/mcp", version: pkg.version },
   { capabilities: { tools: {} } },
 );
-
-async function buildTools(): Promise<ToolDef[]> {
-  const oracleSchemas = await getAllOracleToolSchemas();
-  const responseSchemas = await getAllOracleToolResponseSchemas();
-
-  return toolDefinitions.map((tool) => {
-    let updated = tool;
-    if (isOracleBackedTool(tool.name) && oracleSchemas[tool.name]) {
-      updated = { ...updated, inputSchema: oracleSchemas[tool.name] };
-    }
-    if (!tool.adaptedOutput && responseSchemas[tool.name]) {
-      updated = {
-        ...updated,
-        description:
-          updated.description +
-          "\n\nOracle response schema (auto-derived from OpenAPI at startup):\n" +
-          JSON.stringify(responseSchemas[tool.name]),
-      };
-    }
-    return updated;
-  });
-}
 
 type HistoryQueryArgs = {
   from?: string;

@@ -1,18 +1,22 @@
 const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
 const OPENAPI_URL = `${API_BASE}/openapi.json`;
-// TTL enables re-use outside the one-shot MCP boot path (e.g. health-check,
-// future CLI consumers). index.ts intentionally resolves once at startup.
-const CACHE_TTL_MS = 3_600_000; // 1 hour
+const CACHE_TTL_MS = 3_600_000;
 
-// ── Types ────────────────────────────────────────────────────────────
-
-interface OpenApiParameter {
-  name: string;
-  required?: boolean;
-  in: "path" | "query" | "header" | "cookie";
-  schema?: Record<string, unknown>;
-  description?: string;
-}
+export const TOOL_TO_OPERATION: Record<string, string> = {
+  data_get_basket: "OraclePublicController_getBasket",
+  data_get_price: "OraclePublicController_getModel",
+  data_get_scu: "OraclePublicController_getScu",
+  data_get_breakdown: "OraclePublicController_getScu",
+  data_get_cpi: "OraclePublicController_getBasket",
+  data_get_reconstitutions: "OraclePublicController_getReconstitutions",
+  data_get_methodology: "MethodologyPublicController_getChangelog",
+  data_get_history: "OraclePublicController_getHistory",
+  data_get_model_price_history: "OraclePublicController_getModelPriceHistory",
+  data_get_catalog: "OraclePublicController_getCatalog",
+  data_get_model_price_at: "OraclePublicController_getModelPriceAt",
+  data_get_baseline: "OraclePublicController_getBaseline",
+  data_get_scu_at: "OraclePublicController_getScuAt",
+};
 
 interface OpenApiResponse {
   description?: string;
@@ -21,9 +25,7 @@ interface OpenApiResponse {
 
 interface OpenApiOperation {
   operationId?: string;
-  parameters?: OpenApiParameter[];
   responses?: Record<string, OpenApiResponse>;
-  summary?: string;
 }
 
 interface OpenApiPathItem {
@@ -43,29 +45,13 @@ interface OpenApiSpec {
 
 type JsonSchema = Record<string, unknown>;
 
-// ── Cache ────────────────────────────────────────────────────────────
-
 interface CacheEntry {
-  spec: OpenApiSpec;
-  schemas: Map<string, JsonSchema>;
   responseSchemas: Map<string, JsonSchema>;
   fetchedAt: number;
 }
 
 let cache: CacheEntry | null = null;
 
-// ── Static mappings ──────────────────────────────────────────────────
-
-import {
-  FALLBACK_SCHEMAS,
-  MCP_EXTRA_PROPERTIES,
-  PARAM_RENAMES,
-  TOOL_TO_OPERATION,
-} from "./openapi-schema-mappings.js";
-
-// ── Schema derivation ────────────────────────────────────────────────
-
-/** Resolve a `$ref` string like `#/components/schemas/Foo` against the spec. */
 function resolveRef(spec: OpenApiSpec, ref: string): Record<string, unknown> | null {
   const parts = ref.replace(/^#\//, "").split("/");
   let current: unknown = spec;
@@ -78,19 +64,6 @@ function resolveRef(spec: OpenApiSpec, ref: string): Record<string, unknown> | n
     : null;
 }
 
-/** Resolve a schema object, following `$ref` if present. */
-function resolveSchema(
-  spec: OpenApiSpec,
-  schema: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  if (!schema) return { type: "string" };
-  if (typeof schema.$ref === "string") {
-    return resolveRef(spec, schema.$ref) ?? { type: "string" };
-  }
-  return schema;
-}
-
-/** Recursively resolve all $ref pointers in a schema so the result is self-contained. */
 function deepResolveSchema(
   spec: OpenApiSpec,
   schema: Record<string, unknown>,
@@ -138,7 +111,6 @@ function deepResolveSchema(
   return result;
 }
 
-/** Extract the 200-response JSON Schema from an operation, fully resolved. */
 function extractResponseSchema(
   spec: OpenApiSpec,
   operation: OpenApiOperation,
@@ -150,105 +122,6 @@ function extractResponseSchema(
   return deepResolveSchema(spec, jsonContent.schema);
 }
 
-/**
- * Build an MCP-compatible inputSchema (JSON Schema) from an OpenAPI
- * operation's parameters array.
- *
- * - Path and query parameters become top-level properties.
- * - Required path parameters are marked as required.
- * - Header/cookie parameters are excluded (not relevant for MCP).
- */
-function buildInputSchema(
-  spec: OpenApiSpec,
-  operation: OpenApiOperation,
-): JsonSchema {
-  const params = (operation.parameters ?? []).filter(
-    (p) => p.in === "path" || p.in === "query",
-  );
-
-  if (params.length === 0) {
-    return { type: "object", properties: {} };
-  }
-
-  const properties: Record<string, Record<string, unknown>> = {};
-  const required: string[] = [];
-
-  for (const param of params) {
-    const resolved = resolveSchema(spec, param.schema as Record<string, unknown> | undefined);
-    const prop: Record<string, unknown> = { ...resolved };
-    if (param.description) {
-      prop.description = param.description;
-    }
-    // For the MCP `data_get_price` tool, the path param is named `key` in the
-    // OpenAPI spec but the MCP handler expects `model`. We remap below.
-    properties[param.name] = prop;
-    if (param.required) {
-      required.push(param.name);
-    }
-  }
-
-  const schema: JsonSchema = { type: "object", properties };
-  if (required.length > 0) {
-    schema.required = required;
-  }
-  return schema;
-}
-
-/** Apply per-tool parameter renames to a derived schema. */
-function applyRenames(toolName: string, schema: JsonSchema): JsonSchema {
-  const renames = PARAM_RENAMES[toolName];
-  if (!renames) return schema;
-
-  const props = schema.properties as Record<string, unknown> | undefined;
-  if (!props) return schema;
-
-  const newProps: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(props)) {
-    const renamed = renames[name] ?? name;
-    newProps[renamed] = value;
-  }
-
-  const req = schema.required as string[] | undefined;
-  const newReq = req?.map((r) => renames[r] ?? r);
-
-  return {
-    ...schema,
-    properties: newProps,
-    ...(newReq && newReq.length > 0 ? { required: newReq } : {}),
-  };
-}
-
-/** Merge MCP-only extra properties into a derived schema (per-property merge). */
-function applyMcpExtras(toolName: string, schema: JsonSchema): JsonSchema {
-  const extras = MCP_EXTRA_PROPERTIES[toolName];
-  if (!extras) return schema;
-
-  const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
-  const merged: Record<string, unknown> = { ...props };
-  for (const [key, extra] of Object.entries(extras)) {
-    merged[key] = { ...(props[key] ?? {}), ...extra };
-  }
-  return { ...schema, properties: merged };
-}
-
-// ── Core functions ───────────────────────────────────────────────────
-
-/** Build the operationId -> inputSchema map from a parsed OpenAPI spec. */
-function buildSchemaMap(spec: OpenApiSpec): Map<string, JsonSchema> {
-  const map = new Map<string, JsonSchema>();
-
-  for (const [, pathItem] of Object.entries(spec.paths)) {
-    for (const method of ["get", "post", "put", "delete", "patch"] as const) {
-      const operation = pathItem[method];
-      if (!operation?.operationId) continue;
-      map.set(operation.operationId, buildInputSchema(spec, operation));
-    }
-  }
-
-  return map;
-}
-
-/** Build the operationId -> response JSON Schema map from a parsed OpenAPI spec. */
 function buildResponseSchemaMap(spec: OpenApiSpec): Map<string, JsonSchema> {
   const map = new Map<string, JsonSchema>();
 
@@ -264,21 +137,13 @@ function buildResponseSchemaMap(spec: OpenApiSpec): Map<string, JsonSchema> {
   return map;
 }
 
-/**
- * Fetch the OpenAPI spec and build the schema map.
- * Returns null on network/parse failure.
- */
 async function fetchAndBuild(): Promise<CacheEntry | null> {
   try {
-    const res = await fetch(OPENAPI_URL, {
-      signal: AbortSignal.timeout(10_000), // 10s timeout
-    });
+    const res = await fetch(OPENAPI_URL, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
     const spec = (await res.json()) as OpenApiSpec;
     if (!spec.paths || typeof spec.paths !== "object") return null;
-    const schemas = buildSchemaMap(spec);
-    const responseSchemas = buildResponseSchemaMap(spec);
-    return { spec, schemas, responseSchemas, fetchedAt: Date.now() };
+    return { responseSchemas: buildResponseSchemaMap(spec), fetchedAt: Date.now() };
   } catch {
     return null;
   }
@@ -296,85 +161,10 @@ async function ensureCache(): Promise<CacheEntry | null> {
   return cache ?? null;
 }
 
-async function getSchemaMap(): Promise<Map<string, JsonSchema> | null> {
-  const entry = await ensureCache();
-  return entry?.schemas ?? null;
-}
-
-// ── Public API ───────────────────────────────────────────────────────
-
-/**
- * Get the inputSchema for a single MCP tool by its tool name.
- *
- * Resolution order:
- * 1. OpenAPI spec (via operationId mapping) + parameter renames + MCP extras
- * 2. Hardcoded fallback if OpenAPI is unavailable
- * 3. Empty object schema as last resort
- */
-export async function getToolInputSchema(toolName: string): Promise<JsonSchema> {
-  const operationId = TOOL_TO_OPERATION[toolName];
-  if (!operationId) {
-    // Not an oracle-backed tool — no OpenAPI mapping exists.
-    // Return fallback if we have one, otherwise empty.
-    return FALLBACK_SCHEMAS[toolName] ?? { type: "object", properties: {} };
-  }
-
-  const schemas = await getSchemaMap();
-  if (!schemas) {
-    return FALLBACK_SCHEMAS[toolName] ?? { type: "object", properties: {} };
-  }
-
-  const raw = schemas.get(operationId);
-  if (!raw) {
-    return FALLBACK_SCHEMAS[toolName] ?? { type: "object", properties: {} };
-  }
-
-  // Apply renames (e.g. key -> model), then merge MCP-only extras
-  const renamed = applyRenames(toolName, raw);
-  return applyMcpExtras(toolName, renamed);
-}
-
-/**
- * Get inputSchemas for all oracle-backed MCP tools in one call.
- * More efficient than calling getToolInputSchema() per tool — single
- * OpenAPI fetch for all.
- *
- * Returns a map from tool name -> inputSchema.
- */
-export async function getAllOracleToolSchemas(): Promise<Record<string, JsonSchema>> {
-  const schemas = await getSchemaMap();
-  const result: Record<string, JsonSchema> = {};
-
-  for (const [toolName, operationId] of Object.entries(TOOL_TO_OPERATION)) {
-    if (schemas) {
-      const raw = schemas.get(operationId);
-      if (raw) {
-        const renamed = applyRenames(toolName, raw);
-        result[toolName] = applyMcpExtras(toolName, renamed);
-        continue;
-      }
-    }
-    // Fallback
-    result[toolName] = FALLBACK_SCHEMAS[toolName] ?? { type: "object", properties: {} };
-  }
-
-  return result;
-}
-
-/**
- * Pre-warm the OpenAPI cache. Call at startup so the first
- * ListTools request doesn't block on a network fetch.
- * Silently swallows errors — fallback schemas will be used.
- */
 export async function warmOpenApiCache(): Promise<void> {
-  await getSchemaMap();
+  await ensureCache();
 }
 
-/**
- * Get response schemas for all oracle-backed MCP tools in one call.
- * Returns a map from tool name -> fully-resolved response JSON Schema.
- * Tools whose Oracle endpoint has no documented response schema are omitted.
- */
 export async function getAllOracleToolResponseSchemas(): Promise<Record<string, JsonSchema>> {
   const entry = await ensureCache();
   const responseMap = entry?.responseSchemas;
@@ -390,31 +180,13 @@ export async function getAllOracleToolResponseSchemas(): Promise<Record<string, 
   return result;
 }
 
-/**
- * Check whether a tool name has an Oracle-backed schema mapping.
- */
-export function isOracleBackedTool(toolName: string): boolean {
-  return toolName in TOOL_TO_OPERATION;
-}
-
-// ── Testing helpers ──────────────────────────────────────────────────
-
-/** @internal Reset the cache — for tests only. */
 export function _resetCache(): void {
   cache = null;
 }
 
-/** @internal Expose internals for unit testing. */
 export const _internals = {
-  buildInputSchema,
-  buildSchemaMap,
   buildResponseSchemaMap,
   deepResolveSchema,
   extractResponseSchema,
   resolveRef,
-  applyRenames,
-  applyMcpExtras,
-  TOOL_TO_OPERATION,
-  FALLBACK_SCHEMAS,
-  PARAM_RENAMES,
 };

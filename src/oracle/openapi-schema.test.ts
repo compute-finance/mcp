@@ -1,32 +1,13 @@
-/**
- * Unit tests for openapi-schema module.
- *
- * Uses Node's built-in test runner (node:test) — no extra dev dependency.
- * Run with: npx tsx --test src/oracle/openapi-schema.test.ts
- */
 import { describe, it, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
-  getToolInputSchema,
-  getAllOracleToolSchemas,
   getAllOracleToolResponseSchemas,
-  isOracleBackedTool,
   _resetCache,
   _internals,
 } from "./openapi-schema.js";
 
-const {
-  buildInputSchema,
-  buildSchemaMap,
-  buildResponseSchemaMap,
-  deepResolveSchema,
-  extractResponseSchema,
-  resolveRef,
-  applyRenames,
-  applyMcpExtras,
-} = _internals;
-
-// ── Fixtures ─────────────────────────────────────────────────────────
+const { buildResponseSchemaMap, deepResolveSchema, extractResponseSchema, resolveRef } =
+  _internals;
 
 const MOCK_SPEC = {
   paths: {
@@ -119,8 +100,6 @@ const MOCK_SPEC = {
   },
 };
 
-// ── Tests ────────────────────────────────────────────────────────────
-
 describe("resolveRef", () => {
   it("resolves a valid $ref path", () => {
     const result = resolveRef(
@@ -136,232 +115,6 @@ describe("resolveRef", () => {
   it("returns null for missing $ref", () => {
     const result = resolveRef(MOCK_SPEC as any, "#/components/schemas/Missing");
     assert.equal(result, null);
-  });
-});
-
-describe("buildInputSchema", () => {
-  it("returns empty object for parameterless operation", () => {
-    const op = { operationId: "test", parameters: [] };
-    const schema = buildInputSchema(MOCK_SPEC as any, op);
-    assert.deepEqual(schema, { type: "object", properties: {} });
-  });
-
-  it("builds schema from path parameters", () => {
-    const op = {
-      operationId: "test",
-      parameters: [
-        { name: "key", required: true, in: "path" as const, schema: { type: "string" } },
-      ],
-    };
-    const schema = buildInputSchema(MOCK_SPEC as any, op);
-    assert.deepEqual(schema, {
-      type: "object",
-      properties: { key: { type: "string" } },
-      required: ["key"],
-    });
-  });
-
-  it("includes query parameters", () => {
-    const op = {
-      operationId: "test",
-      parameters: [
-        {
-          name: "limit",
-          required: false,
-          in: "query" as const,
-          schema: { type: "number" },
-          description: "Max items",
-        },
-      ],
-    };
-    const schema = buildInputSchema(MOCK_SPEC as any, op);
-    assert.deepEqual(schema, {
-      type: "object",
-      properties: {
-        limit: { type: "number", description: "Max items" },
-      },
-    });
-  });
-
-  it("excludes header parameters", () => {
-    const op = {
-      operationId: "test",
-      parameters: [
-        { name: "Authorization", required: true, in: "header" as const, schema: { type: "string" } },
-      ],
-    };
-    const schema = buildInputSchema(MOCK_SPEC as any, op);
-    assert.deepEqual(schema, { type: "object", properties: {} });
-  });
-});
-
-describe("buildSchemaMap", () => {
-  it("builds map from all operationIds", () => {
-    const map = buildSchemaMap(MOCK_SPEC as any);
-    assert.equal(map.size, 4);
-    assert.ok(map.has("OraclePublicController_getScu"));
-    assert.ok(map.has("OraclePublicController_getModel"));
-    assert.ok(map.has("OraclePublicController_getBasket"));
-    assert.ok(!map.has("OraclePublicController_getTiers"));
-  });
-
-  it("parameterless operations get empty properties", () => {
-    const map = buildSchemaMap(MOCK_SPEC as any);
-    assert.deepEqual(map.get("OraclePublicController_getScu"), {
-      type: "object",
-      properties: {},
-    });
-  });
-
-  it("getModel has required key parameter", () => {
-    const map = buildSchemaMap(MOCK_SPEC as any);
-    const schema = map.get("OraclePublicController_getModel");
-    assert.ok(schema);
-    assert.deepEqual(schema.required, ["key"]);
-    const props = schema.properties as Record<string, unknown>;
-    assert.ok("key" in props);
-  });
-});
-
-describe("applyRenames", () => {
-  it("renames key to model for data_get_price", () => {
-    const schema = {
-      type: "object",
-      properties: { key: { type: "string" } },
-      required: ["key"],
-    };
-    const result = applyRenames("data_get_price", schema);
-    assert.ok("model" in (result.properties as Record<string, unknown>));
-    assert.ok(!("key" in (result.properties as Record<string, unknown>)));
-    assert.deepEqual(result.required, ["model"]);
-  });
-
-  it("passes through for tools without renames", () => {
-    const schema = { type: "object", properties: {} };
-    const result = applyRenames("data_get_scu", schema);
-    assert.deepEqual(result, schema);
-  });
-});
-
-describe("applyMcpExtras", () => {
-  it("adds limit to data_get_reconstitutions", () => {
-    const schema = { type: "object", properties: {} } as Record<string, unknown>;
-    const result = applyMcpExtras("data_get_reconstitutions", schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    assert.ok("limit" in props);
-    assert.equal(props.limit.type, "number");
-  });
-
-  it("adds model description to data_get_price", () => {
-    const schema = {
-      type: "object",
-      properties: { model: { type: "string" } },
-    } as Record<string, unknown>;
-    const result = applyMcpExtras("data_get_price", schema);
-    const props = result.properties as Record<string, Record<string, unknown>>;
-    assert.equal(props.model.type, "string");
-    assert.equal(props.model.description, "Model name");
-    assert.deepEqual(props.model.examples, ["claude-sonnet-4.6"]);
-  });
-});
-
-describe("isOracleBackedTool", () => {
-  it("returns true for oracle-backed tools", () => {
-    assert.ok(isOracleBackedTool("data_get_basket"));
-    assert.ok(isOracleBackedTool("data_get_price"));
-    assert.ok(isOracleBackedTool("data_get_scu"));
-    assert.ok(isOracleBackedTool("data_get_history"));
-    assert.ok(isOracleBackedTool("data_get_model_price_history"));
-    assert.ok(isOracleBackedTool("data_get_catalog"));
-    assert.ok(isOracleBackedTool("data_get_model_price_at"));
-    assert.ok(isOracleBackedTool("data_get_baseline"));
-    assert.ok(isOracleBackedTool("data_get_scu_at"));
-  });
-
-  it("returns false for local tools", () => {
-    assert.ok(!isOracleBackedTool("compute_estimate"));
-    assert.ok(!isOracleBackedTool("render_session_report"));
-    assert.ok(!isOracleBackedTool("telemetry_get_history"));
-  });
-});
-
-describe("FALLBACK_SCHEMAS — history surfaces", () => {
-  it("ships a per-model fallback that pins model as a required parameter — Bug guarded: if the oracle is unreachable at boot, agents still see a schema that rejects empty model", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_model_price_history as Record<string, unknown>;
-    assert.deepEqual(schema.required, ["model"]);
-  });
-
-  it("ships an index-history fallback with the granularity enum so agents can pick a bucket without round-tripping the OpenAPI", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_history as Record<string, unknown>;
-    const props = schema.properties as Record<string, Record<string, unknown>>;
-    assert.deepEqual(props.granularity.enum, ["per-revision", "daily", "weekly"]);
-  });
-});
-
-describe("FALLBACK_SCHEMAS — catalog surfaces", () => {
-  it("ships an empty-object catalog fallback so agents can call it without any parameters", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_catalog as Record<string, unknown>;
-    assert.deepEqual(schema.properties, {});
-  });
-
-  it("ships a price-at fallback that pins both model and date as required — Bug guarded: agents must not call with missing date", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_model_price_at as Record<string, unknown>;
-    assert.deepEqual(schema.required, ["model", "date"]);
-    const props = schema.properties as Record<string, Record<string, unknown>>;
-    assert.equal(props.date.type, "string");
-  });
-});
-
-describe("FALLBACK_SCHEMAS — baseline surface", () => {
-  it("ships an empty-object baseline fallback so agents can call it without any parameters", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_baseline as Record<string, unknown>;
-    assert.deepEqual(schema.properties, {});
-  });
-
-  it("does not declare any required parameters — Bug guarded: baseline is a singleton lookup, not a parameterized read", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_baseline as Record<string, unknown>;
-    assert.equal(schema.required, undefined);
-  });
-});
-
-describe("FALLBACK_SCHEMAS — scu-at surface", () => {
-  it("ships a scu-at fallback that pins date as the only required parameter — Bug guarded: agents must not call with missing timestamp", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_scu_at as Record<string, unknown>;
-    assert.deepEqual(schema.required, ["date"]);
-    const props = schema.properties as Record<string, Record<string, unknown>>;
-    assert.equal(props.date.type, "string");
-  });
-
-  it("does not declare model as a parameter — Bug guarded: scu-at is a single-point index lookup, not a per-model price lookup", () => {
-    const schema = _internals.FALLBACK_SCHEMAS.data_get_scu_at as Record<string, unknown>;
-    const props = schema.properties as Record<string, Record<string, unknown>>;
-    assert.equal(props.model, undefined);
-  });
-});
-
-describe("PARAM_RENAMES — per-model history", () => {
-  it("remaps the OpenAPI path param `key` to the MCP tool param `model` for the per-model history tool", () => {
-    assert.equal(_internals.PARAM_RENAMES.data_get_model_price_history.key, "model");
-  });
-
-  it("remaps the OpenAPI path param `key` to the MCP tool param `model` for the price-at tool", () => {
-    assert.equal(_internals.PARAM_RENAMES.data_get_model_price_at.key, "model");
-  });
-});
-
-describe("getToolInputSchema (with fallback)", () => {
-  beforeEach(() => {
-    _resetCache();
-  });
-
-  it("returns fallback for non-oracle tools", async () => {
-    const schema = await getToolInputSchema("compute_estimate");
-    assert.deepEqual(schema, { type: "object", properties: {} });
-  });
-
-  it("returns hardcoded fallback for unknown tools", async () => {
-    const schema = await getToolInputSchema("nonexistent_tool");
-    assert.deepEqual(schema, { type: "object", properties: {} });
   });
 });
 
@@ -394,7 +147,6 @@ describe("deepResolveSchema", () => {
     assert.equal(result.type, "object");
     const props = result.properties as Record<string, any>;
     assert.ok("models" in props);
-    // items inside models array should also be resolved
     const items = props.models.items;
     assert.equal(items.type, "object");
     assert.ok("id" in items.properties);
@@ -469,67 +221,8 @@ describe("buildResponseSchemaMap", () => {
     assert.ok(basketSchema);
     const props = basketSchema.properties as Record<string, any>;
     const items = props.models.items;
-    // Should be resolved, not a $ref
     assert.equal(items.type, "object");
     assert.ok(!("$ref" in items));
-  });
-});
-
-describe("getAllOracleToolSchemas (mocked fetch)", () => {
-  let fetchMock: ReturnType<typeof mock.fn>;
-
-  beforeEach(() => {
-    _resetCache();
-    fetchMock = mock.fn(async () => ({
-      ok: true,
-      json: async () => MOCK_SPEC,
-    }));
-    (globalThis as any).fetch = fetchMock;
-  });
-
-  afterEach(() => {
-    mock.restoreAll();
-  });
-
-  it("returns schemas for all oracle-backed tools", async () => {
-    const schemas = await getAllOracleToolSchemas();
-    assert.ok("data_get_basket" in schemas);
-    assert.ok("data_get_price" in schemas);
-    assert.ok("data_get_scu" in schemas);
-    assert.ok("data_get_cpi" in schemas);
-    assert.ok("data_get_reconstitutions" in schemas);
-    assert.ok(!("data_get_tiers" in schemas), "data_get_tiers must be gone — endpoint removed from API");
-    // Should NOT contain local tools
-    assert.ok(!("compute_estimate" in schemas));
-    assert.ok(!("render_session_report" in schemas));
-  });
-
-  it("data_get_price schema has model property with required", async () => {
-    const schemas = await getAllOracleToolSchemas();
-    const priceSchema = schemas.data_get_price;
-    assert.ok(priceSchema);
-    const props = priceSchema.properties as Record<string, unknown>;
-    assert.ok("model" in props);
-    assert.ok(Array.isArray(priceSchema.required));
-    assert.ok((priceSchema.required as string[]).includes("model"));
-  });
-
-  it("data_get_reconstitutions has MCP-only limit property", async () => {
-    const schemas = await getAllOracleToolSchemas();
-    const reconSchema = schemas.data_get_reconstitutions;
-    const props = reconSchema.properties as Record<string, Record<string, unknown>>;
-    assert.ok("limit" in props);
-    assert.equal(props.limit.type, "number");
-  });
-
-  it("falls back to hardcoded schemas when fetch fails", async () => {
-    (globalThis as any).fetch = mock.fn(async () => { throw new Error("network down"); });
-    const schemas = await getAllOracleToolSchemas();
-    // Should still return schemas from FALLBACK_SCHEMAS
-    assert.ok("data_get_basket" in schemas);
-    assert.ok("data_get_price" in schemas);
-    const priceSchema = schemas.data_get_price;
-    assert.ok(Array.isArray(priceSchema.required));
   });
 });
 

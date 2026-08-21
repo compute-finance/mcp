@@ -162,6 +162,31 @@ describe("smoke: routing fee contract", () => {
   });
 });
 
+describe("smoke: canonical model ids", () => {
+  it("SHOULD identify every basket, catalog and resolved model by its canonical vendor/model id — Bug guarded: a bare id reaching an agent is a name it cannot round-trip back to the oracle", { timeout: 15_000 }, async () => {
+    const basket = await getBasketPrices();
+    assert.ok(basket.length > 0, "basket must not be empty");
+    for (const m of basket) {
+      assert.ok(m.model.includes("/"), `basket model '${m.model}' is not vendor-prefixed`);
+    }
+
+    const catalog = (await getCatalog()) as { models: Array<{ modelKey: string }> };
+    for (const m of catalog.models) {
+      assert.ok(
+        m.modelKey.includes("/"),
+        `catalog modelKey '${m.modelKey}' is not vendor-prefixed`,
+      );
+    }
+
+    const resolved = await resolveModel(basket[0].model);
+    assert.ok(resolved !== null, `${basket[0].model} must resolve`);
+    assert.ok(
+      resolved.resolved_key.includes("/"),
+      `resolvedKey '${resolved.resolved_key}' is not vendor-prefixed`,
+    );
+  });
+});
+
 describe("smoke: data_get_scu", () => {
   it("returns SCU value as a positive number with a methodology-versioned breakdown", { timeout: 10_000 }, async () => {
     const data = await getScu() as Record<string, unknown>;

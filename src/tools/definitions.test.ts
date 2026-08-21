@@ -24,7 +24,7 @@ describe("toolDefinitions", () => {
     );
   });
 
-  it("SHOULD describe data_get_basket with the family field — Bug guarded: family is the load-bearing categorical key after CF-418", () => {
+  it("SHOULD describe data_get_basket with the family field — Bug guarded: family is the load-bearing categorical key for grouping and joins", () => {
     const basket = toolDefinitions.find((t) => t.name === "data_get_basket");
     assert.ok(basket);
     assert.ok(basket.description.includes("family"));
@@ -95,12 +95,63 @@ describe("toolDefinitions", () => {
     assert.ok(tool.description.includes("indexMember"));
   });
 
-  it("SHOULD describe data_get_model_price_at with the discriminated source union — Bug guarded: agents must route on manifest vs providerCost source", () => {
+  it("SHOULD describe data_get_model_price_at with the discriminated source union — Bug guarded: agents must route on the 'manifest' vs 'catalog' source the oracle actually publishes", () => {
     const tool = toolDefinitions.find((t) => t.name === "data_get_model_price_at");
     assert.ok(tool);
-    assert.ok(tool.description.includes("manifest"));
-    assert.ok(tool.description.includes("providerCost"));
+    assert.ok(tool.description.includes("'manifest'"));
+    assert.ok(tool.description.includes("'catalog'"));
     assert.ok(tool.description.includes("source"));
+    assert.ok(!tool.description.includes("providerCost"));
+  });
+
+  it("SHOULD describe manifestKey alongside modelKey on both per-model price tools — Bug guarded: the bare manifest key and the canonical id are distinct fields and must not be conflated", () => {
+    for (const name of ["data_get_model_price_at", "data_get_model_price_history"]) {
+      const tool = toolDefinitions.find((t) => t.name === name);
+      assert.ok(tool, `${name} missing`);
+      assert.ok(tool.description.includes("manifestKey"), `${name} omits manifestKey`);
+      assert.ok(tool.description.includes("modelKey"), `${name} omits modelKey`);
+    }
+  });
+
+  it("SHOULD NOT claim data_get_model_price_history needs a confirmed basket appearance — Bug guarded: the oracle serves any tracked model and the stale precondition steers agents away from catalog-only models", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_price_history");
+    assert.ok(tool);
+    assert.ok(!/never appeared/i.test(tool.description));
+    assert.ok(!/appeared in at least one/i.test(tool.description));
+  });
+
+  it("SHOULD teach the canonical vendor-prefixed id AND the bare fallback ON every tool taking a model — Bug guarded: an agent handed a bare-only example never learns the id the oracle echoes back", () => {
+    const modelTools = toolDefinitions.filter(
+      (t) =>
+        "model" in
+        ((t.inputSchema.properties ?? {}) as Record<string, unknown>),
+    );
+    assert.deepEqual(
+      modelTools.map((t) => t.name),
+      [
+        "data_get_price",
+        "data_get_model_price_history",
+        "data_get_model_price_at",
+        "compute_estimate",
+      ],
+    );
+    for (const tool of modelTools) {
+      const props = tool.inputSchema.properties as Record<
+        string,
+        { examples?: string[] }
+      >;
+      for (const example of props.model.examples ?? []) {
+        assert.ok(example.includes("/"), `${tool.name} example '${example}' is not canonical`);
+      }
+      assert.ok(
+        /canonical vendor-prefixed id/.test(tool.description),
+        `${tool.name} does not name the canonical form`,
+      );
+      assert.ok(
+        /bare name/.test(tool.description),
+        `${tool.name} does not say the bare name still resolves`,
+      );
+    }
   });
 
   it("SHOULD include data_get_baseline as an ORACLE-annotated read tool", () => {

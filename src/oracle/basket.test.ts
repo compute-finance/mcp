@@ -15,7 +15,7 @@ function mockBasket(body: unknown): void {
 
 function wireModel(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: "qwen3.7-plus",
+    id: "qwen/qwen3.7-plus",
     displayName: "Qwen3.7 Plus",
     provider: { key: "alibaba", name: "Alibaba" },
     family: "alibaba.qwen-plus",
