@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/compute-finance/mcp/compare/v0.8.1...v0.9.0) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* cache components no longer carry source and sourceUrl, which had become a constant value and an always-empty field.
+* model ids in tool output are vendor-prefixed, so a consumer matching them against bare names must strip the prefix.
+
+### Features
+
+* identify every model by its canonical vendor/model id ([#55](https://github.com/compute-finance/mcp/issues/55)) ([303213a](https://github.com/compute-finance/mcp/commit/303213a5faa9d5a2d8eb6976d10578115b313eed))
+* mark how far every published price has been checked ([#56](https://github.com/compute-finance/mcp/issues/56)) ([2088cfc](https://github.com/compute-finance/mcp/commit/2088cfc2aa7db10467a4ddffb60bf2f28310039e))
+* quote a long context at the rate it will actually bill ([#57](https://github.com/compute-finance/mcp/issues/57)) ([c6553e3](https://github.com/compute-finance/mcp/commit/c6553e368fc9c82cc30b3febf1de368e6b2f8481))
+
 ## [0.8.1](https://github.com/compute-finance/mcp/compare/v0.8.0...v0.8.1) (2026-08-07)
 
 
