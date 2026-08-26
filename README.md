@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/@compute-finance/mcp.svg)](https://www.npmjs.com/package/@compute-finance/mcp)
 [![license](https://img.shields.io/npm/l/@compute-finance/mcp.svg)](https://github.com/compute-finance/mcp/blob/main/LICENSE)
 
-Live AI compute pricing oracle — real-time LLM model prices across providers (Anthropic, OpenAI, Google, xAI) via the [Compute Finance Oracle](https://compute.finance).
+Live AI compute pricing oracle — real-time LLM model prices across nine vendors (Anthropic, OpenAI, Google, DeepSeek, xAI and four more) via the [Compute Finance Oracle](https://compute.finance).
 
 A stdio [MCP](https://modelcontextprotocol.io) server. Works in any MCP client. Includes optional Claude Code skills for session cost analysis.
 
@@ -55,21 +55,27 @@ npx . setup
 
 ## Tools
 
-17 tools across five layers — no API key required. All tools are read-only.
+21 tools across five layers — no API key required. All tools are read-only.
 
 ### Data (live oracle)
 
 | Tool | Description |
 |------|-------------|
 | `data_get_basket` | All models with provider, family (e.g. `openai.gpt`, `anthropic.claude`), `base_*` and `billed_*` USD prices per million tokens, and per-component cache pricing (read, write-5m, write-1h) with provider attribution |
-| `data_get_price` | Price for a single model (e.g. `claude-opus-4.7`) — basket members and catalog-only entries on identical terms |
+| `data_get_price` | Price for a single model (e.g. `anthropic/claude-opus-4.8`) — basket members and catalog-only entries on identical terms |
 | `data_get_scu` | Current Standard Compute Unit — value plus a methodology-versioned `breakdown` listing every family representative |
 | `data_get_breakdown` | Per-family blended-cost breakdown alone — methodology-versioned discriminated union with one entry per family representative |
-| `data_get_cpi` | Full Compute Price Index — basket with `scuUsd`, version, raw/marked-up prices |
+| `data_get_cpi` | Full Compute Price Index — basket with `scuUsd`, `revisionVersion`, raw/marked-up prices |
 | `data_get_reconstitutions` | Historical basket changes — model swaps, SCU before/after |
 | `data_get_methodology` | Methodology changelog — every version with its formula summary and spec link, plus the version in force |
 | `data_get_history` | SCU index time series over a date range — `per-revision`, `daily`, or `weekly` granularity; daily/weekly buckets carry the last revision's value forward across empty buckets |
-| `data_get_model_price_history` | Per-model input/output USD price time series for a model that has appeared in the SCU basket — same granularity semantics as `data_get_history`, with catchup gaps surfaced in `unavailableRevisions` |
+| `data_get_model_price_history` | Per-model input/output USD price time series for any oracle-tracked model — same granularity semantics as `data_get_history`, with catchup gaps surfaced in `unavailableRevisions` |
+| `data_get_catalog` | Every model with a recorded price, index members and non-index entries alike — `indexMember` flag, current price, cache and reasoning components |
+| `data_get_model_price_at` | Per-model input/output USD price effective at a timestamp — `manifest` source when the model represented its family in the revision active then, `catalog` otherwise |
+| `data_get_baseline` | Frozen SCU denominator behind `computeIndex` — the SCU of the first confirmed revision, set once and never recomputed |
+| `data_get_scu_at` | SCU value active at a timestamp via step function — no interpolation, `null` before the genesis revision |
+
+Models are identified by their canonical vendor-prefixed id — `anthropic/claude-opus-4.8`, `openai/gpt-5.5`, `qwen/qwen-3.5-flash`. Every tool taking a model also accepts the bare name (`gpt-5.5`) and answers with the canonical id. The vendor slug is not always the provider key (`alibaba` → `qwen`, `xai` → `x-ai`, `moonshot` → `moonshotai`), so reuse an id the API returned rather than assembling one. `data_get_scu`, `data_get_breakdown` and `data_get_reconstitutions` are the exception: they pass the attested manifest through verbatim and so report bare model keys, because a `/` is not a legal manifest key.
 
 Cache pricing comes from the Compute Finance Oracle. Session and consumption reports show effective (cache-aware) cost when the oracle has published the relevant cache components; otherwise they show nominal cost (input rate applied to every input variant) and label effective as unavailable for that model.
 
@@ -144,11 +150,11 @@ Remove the `UserPromptSubmit` entry from `~/.claude/settings.json`.
 
 ## Privacy
 
-All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance/v1/oracle/*`. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl`) are never uploaded.
+All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance` — the oracle endpoints under `/v1/oracle/*` and the OpenAPI document at `/openapi.json`, read once at startup to document oracle response shapes. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl`) are never uploaded.
 
 ## Links
 
 - [Compute Finance](https://compute.finance)
 - [Oracle API](https://api.compute.finance)
-- [OpenAPI spec](https://api.compute.finance/v1/openapi.yaml)
+- [OpenAPI spec](https://api.compute.finance/openapi.json)
 - [npm package](https://www.npmjs.com/package/@compute-finance/mcp)

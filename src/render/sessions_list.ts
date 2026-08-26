@@ -16,6 +16,32 @@ export interface ActiveSessionsArgs {
   hours?: number;
 }
 
+export interface SessionRow {
+  session: string;
+  model: string;
+  prompts: number;
+  inferences: number;
+  tool_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  effective_usd: number | null;
+  nominal_usd: number | null;
+  last_active: string;
+}
+
+export function renderSessionsTable(rows: SessionRow[]): string[] {
+  const modelWidth = Math.max("model".length, ...rows.map((r) => r.model.length));
+  const out = [
+    `  ${pad("session", 12)} ${pad("model", modelWidth)} ${pad("prompts", 7, "r")} ${pad("infs", 5, "r")} ${pad("tools", 5, "r")} ${pad("in-tok", 8, "r")} ${pad("out-tok", 8, "r")} ${pad("effective", 10, "r")} ${pad("nominal", 10, "r")}  last-active`,
+  ];
+  for (const r of rows) {
+    out.push(
+      `  ${pad(r.session, 12)} ${pad(r.model, modelWidth)} ${pad(String(r.prompts), 7, "r")} ${pad(String(r.inferences), 5, "r")} ${pad(String(r.tool_calls), 5, "r")} ${pad(tokens(r.input_tokens), 8, "r")} ${pad(tokens(r.output_tokens), 8, "r")} ${pad(money(r.effective_usd), 10, "r")} ${pad(money(r.nominal_usd), 10, "r")}  ${r.last_active}`,
+    );
+  }
+  return out;
+}
+
 function scanSessions(cwd?: string): { path: string; mtime: number }[] {
   const root = join(homedir(), ".claude", "projects");
   if (!existsSync(root)) return [];
@@ -59,9 +85,6 @@ export async function renderActiveSessions(
     `Scanning ${args.cwd ? args.cwd : "all projects"} · last ${hours}h · top ${limit} by recency`,
   );
   L.push("");
-  L.push(
-    `  ${pad("session", 12)} ${pad("model", 20)} ${pad("prompts", 7, "r")} ${pad("infs", 5, "r")} ${pad("tools", 5, "r")} ${pad("in-tok", 8, "r")} ${pad("out-tok", 8, "r")} ${pad("effective", 10, "r")} ${pad("nominal", 10, "r")}  last-active`,
-  );
 
   let totalEff = 0;
   let totalNom = 0;
@@ -81,6 +104,7 @@ export async function renderActiveSessions(
     }),
   );
 
+  const tableRows: SessionRow[] = [];
   for (const row of rows) {
     if (!row) continue;
     const { f, usage, resolved } = row;
@@ -111,17 +135,23 @@ export async function renderActiveSessions(
     } else {
       offBasketSessions += 1;
     }
-    const totalIn =
-      usage.raw_input_tokens +
-      usage.cache_read_tokens +
-      usage.cache_creation_tokens;
-    const shortId = usage.session_id.slice(0, 8);
-    const modelShort = (normalized ?? usage.model ?? "—").slice(0, 20);
-    const when = new Date(f.mtime).toISOString().replace("T", " ").slice(0, 16);
-    L.push(
-      `  ${pad(shortId, 12)} ${pad(modelShort, 20)} ${pad(String(usage.prompts), 7, "r")} ${pad(String(usage.inferences), 5, "r")} ${pad(String(usage.tool_calls), 5, "r")} ${pad(tokens(totalIn), 8, "r")} ${pad(tokens(usage.output_tokens), 8, "r")} ${pad(money(eff), 10, "r")} ${pad(money(nom), 10, "r")}  ${when}`,
-    );
+    tableRows.push({
+      session: usage.session_id.slice(0, 8),
+      model: normalized ?? usage.model ?? "—",
+      prompts: usage.prompts,
+      inferences: usage.inferences,
+      tool_calls: usage.tool_calls,
+      input_tokens:
+        usage.raw_input_tokens +
+        usage.cache_read_tokens +
+        usage.cache_creation_tokens,
+      output_tokens: usage.output_tokens,
+      effective_usd: eff,
+      nominal_usd: nom,
+      last_active: new Date(f.mtime).toISOString().replace("T", " ").slice(0, 16),
+    });
   }
+  L.push(...renderSessionsTable(tableRows));
 
   L.push("");
   if (cacheMissingSessions === 0) {
