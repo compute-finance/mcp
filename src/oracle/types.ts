@@ -1,4 +1,6 @@
-export type PriceProvenance = "verified" | "inferred" | "promotional";
+export const PROVENANCE_MARKS = ["verified", "inferred", "promotional"] as const;
+
+export type PriceProvenance = (typeof PROVENANCE_MARKS)[number];
 
 export type CacheComponentKind = "cachedInput" | "cacheWrite5m" | "cacheWrite1h";
 
@@ -26,15 +28,35 @@ export interface BasePriceProvenance {
   output: PriceProvenance;
 }
 
-export interface ModelPrice {
+export interface BaseRates {
+  base_input_usd_per_million: number;
+  base_output_usd_per_million: number;
+}
+
+export interface ContextTierRates extends BaseRates {
+  from_input_tokens: number;
+  provenance: BasePriceProvenance | null;
+}
+
+export interface ContextTier extends ContextTierRates {
+  billed_input_usd_per_million: number | null;
+  billed_output_usd_per_million: number | null;
+}
+
+export type ContextLadder = [ContextTier, ...ContextTier[]];
+
+export interface ModelContext {
+  context_tiers: ContextLadder;
+  max_input_tokens: number | null;
+}
+
+export interface ModelPrice extends BaseRates {
   model: string;
   display_name: string;
   provider: string;
   provider_name: string;
   family: string;
   released_at: string | null;
-  base_input_usd_per_million: number;
-  base_output_usd_per_million: number;
   base_input_wei_per_million: number | null;
   base_output_wei_per_million: number | null;
   cache: CachePricing | null;
@@ -56,6 +78,13 @@ export interface OracleCacheBlock {
 
 export interface OracleReasoningBlock {
   reasoningOutput: OraclePriceComponentWire | null;
+}
+
+export interface OracleContextTierWire {
+  fromInputTokens: number;
+  inputPriceUsdPerMillion: number;
+  outputPriceUsdPerMillion: number;
+  provenance: PriceProvenance;
 }
 
 export type PriceSource = "oracle-basket" | "oracle-catalog" | "off-basket";

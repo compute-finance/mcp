@@ -16,7 +16,7 @@ import {
 import { getFieldMap } from "./field-map.js";
 import { trimFloatNoise } from "../render/format.js";
 
-const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
+export const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
 
 interface CacheEntry<T> {
   data: T;
@@ -32,7 +32,7 @@ let methodologyCache: CacheEntry<unknown> | null = null;
 let basketCache: CacheEntry<ModelPrice[]> | null = null;
 const driftWarned = new Set<string>();
 
-function warnDriftOnce(key: string, message: string): void {
+export function warnDriftOnce(key: string, message: string): void {
   if (driftWarned.has(key)) return;
   driftWarned.add(key);
   process.stderr.write(`[oracle] ${message}\n`);
@@ -421,6 +421,10 @@ export function _resetBasketCache(): void {
   basketCache = null;
   cpiCache = null;
   cpiInflight = null;
+}
+
+export function _resetCatalogCache(): void {
+  catalogCache = null;
 }
 
 export function _seedBasketCache(models: ModelPrice[]): void {

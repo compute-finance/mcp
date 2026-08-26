@@ -35,11 +35,16 @@ import {
   resolveModelPrice,
 } from "./oracle/client.js";
 import { getRoutingFeeRate } from "./oracle/routing-fee.js";
+import { PRICING_NOTE, withBilledPrices } from "./oracle/pricing-wire.js";
 import {
-  PRICING_NOTE,
-  usdCost,
-  withBilledPrices,
-} from "./oracle/pricing-wire.js";
+  CONTEXT_UNAVAILABLE,
+  contextFor,
+  getCatalogContexts,
+  modelContext,
+  quoteAtContextTier,
+  requireContextFor,
+  tryCatalogContexts,
+} from "./oracle/context-tiers.js";
 import { warmOpenApiCache } from "./oracle/openapi-schema.js";
 import { initFieldMap, getFieldMap } from "./oracle/field-map.js";
 import { renderSessionReport } from "./render/session_report.js";
@@ -105,32 +110,45 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     switch (name) {
       case "data_get_basket": {
-        const [models, rate] = await Promise.all([
+        const [models, rate, contexts] = await Promise.all([
           getBasketPrices(),
           getRoutingFeeRate(),
+          tryCatalogContexts(),
         ]);
         return textWithContext({
-          models: models.map((m) => withBilledPrices(m, rate)),
+          models: models.map((m) => {
+            const context = contextFor(contexts, m.model);
+            return {
+              ...withBilledPrices(m, rate),
+              ...(context ? modelContext(m, null, context, rate) : CONTEXT_UNAVAILABLE),
+            };
+          }),
           routing_fee_rate: rate,
           pricing_note: PRICING_NOTE,
-          source: "api.compute.finance/v1/oracle/basket",
+          source: "api.compute.finance/v1/oracle/basket + /v1/oracle/catalog",
         });
       }
       case "data_get_price": {
         const model = requireString(a.model, "model");
         if (typeof model !== "string") return errorText(model.error);
-        const [priced, rate] = await Promise.all([
+        const [priced, rate, contexts] = await Promise.all([
           resolveModelPrice(model),
           getRoutingFeeRate(),
+          tryCatalogContexts(),
         ]);
         if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
+        const context = contextFor(contexts, priced.price.model);
         return textWithContext({
           ...withBilledPrices(priced.price, rate),
           base_price_provenance: priced.base_price_provenance,
+          ...(context
+            ? modelContext(priced.price, priced.base_price_provenance, context, rate)
+            : CONTEXT_UNAVAILABLE),
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,
-          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket",
+          source:
+            "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog",
         });
       }
       case "data_get_scu":
@@ -196,21 +214,30 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const [priced, rate] = await Promise.all([
+        const [priced, rate, contexts] = await Promise.all([
           resolveModelPrice(model),
           getRoutingFeeRate(),
+          getCatalogContexts(),
         ]);
         if (!priced) return errorText(`Model not tracked by oracle: ${model}`);
         return textWithContext({
           model: priced.price.model,
           input_tokens: inT,
           output_tokens: outT,
-          ...usdCost(priced.price, inT, outT, rate),
+          ...quoteAtContextTier(
+            priced.price,
+            priced.base_price_provenance,
+            requireContextFor(contexts, priced.price.model),
+            rate,
+            inT,
+            outT,
+          ),
           base_price_provenance: priced.base_price_provenance,
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,
-          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket",
+          source:
+            "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog",
         });
       }
       case "compute_compare": {
@@ -218,17 +245,25 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const [basket, methodologyVersion, rate] = await Promise.all([
+        const [basket, methodologyVersion, rate, contexts] = await Promise.all([
           getBasketPrices(),
           getActiveMethodologyVersion(),
           getRoutingFeeRate(),
+          getCatalogContexts(),
         ]);
         const ranked = basket
           .map((p) => ({
             model: p.model,
             provider: p.provider,
             family: p.family,
-            ...usdCost(p, inT, outT, rate),
+            ...quoteAtContextTier(
+              p,
+              null,
+              requireContextFor(contexts, p.model),
+              rate,
+              inT,
+              outT,
+            ),
           }))
           .sort((x, y) => x.base_usd_cost - y.base_usd_cost);
         const by_family: Record<string, typeof ranked> = {};
@@ -244,7 +279,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           routing_fee_rate: rate,
           pricing_note: PRICING_NOTE,
           methodology_version: methodologyVersion,
-          source: "api.compute.finance/v1/oracle/basket",
+          source: "api.compute.finance/v1/oracle/basket + /v1/oracle/catalog",
         });
       }
 
