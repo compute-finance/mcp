@@ -1,15 +1,29 @@
-export interface CachePriceComponent {
+export type PriceProvenance = "verified" | "inferred" | "promotional";
+
+export type CacheComponentKind = "cachedInput" | "cacheWrite5m" | "cacheWrite1h";
+
+export type PriceComponentKind = CacheComponentKind | "reasoningOutput";
+
+export interface PriceComponent {
   usdPerMillion: number;
   ratioOfInput: number;
-  source: string;
-  sourceUrl: string | null;
-  createdAt: string;
+  provenance: PriceProvenance;
+  createdAt: string | null;
 }
 
 export interface CachePricing {
-  cachedInput: CachePriceComponent | null;
-  cacheWrite5m: CachePriceComponent | null;
-  cacheWrite1h: CachePriceComponent | null;
+  cachedInput: PriceComponent | null;
+  cacheWrite5m: PriceComponent | null;
+  cacheWrite1h: PriceComponent | null;
+}
+
+export interface ReasoningPricing {
+  reasoningOutput: PriceComponent | null;
+}
+
+export interface BasePriceProvenance {
+  input: PriceProvenance;
+  output: PriceProvenance;
 }
 
 export interface ModelPrice {
@@ -24,20 +38,24 @@ export interface ModelPrice {
   base_input_wei_per_million: number | null;
   base_output_wei_per_million: number | null;
   cache: CachePricing | null;
+  reasoning: ReasoningPricing | null;
 }
 
-export interface OracleCacheComponentWire {
+export interface OraclePriceComponentWire {
   usdPerMillion: number | null;
   ratioOfInput: number | null;
-  source: string;
-  sourceUrl: string | null;
-  createdAt: string;
+  provenance: PriceProvenance;
+  createdAt: string | null;
 }
 
 export interface OracleCacheBlock {
-  cachedInput: OracleCacheComponentWire | null;
-  cacheWrite5m: OracleCacheComponentWire | null;
-  cacheWrite1h: OracleCacheComponentWire | null;
+  cachedInput: OraclePriceComponentWire | null;
+  cacheWrite5m: OraclePriceComponentWire | null;
+  cacheWrite1h: OraclePriceComponentWire | null;
+}
+
+export interface OracleReasoningBlock {
+  reasoningOutput: OraclePriceComponentWire | null;
 }
 
 export type PriceSource = "oracle-basket" | "oracle-catalog" | "off-basket";
@@ -49,7 +67,9 @@ export interface ResolvedModel {
   provider: { key: string; name: string } | null;
   base_input_usd_per_million: number | null;
   base_output_usd_per_million: number | null;
+  base_price_provenance: BasePriceProvenance | null;
   cache: CachePricing | null;
+  reasoning: ReasoningPricing | null;
   in_basket: boolean;
   price_source: PriceSource;
 }

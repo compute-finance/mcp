@@ -20,6 +20,7 @@ function mp(overrides: Partial<ModelPrice> & Pick<ModelPrice, "model" | "family"
     base_input_wei_per_million: 0,
     base_output_wei_per_million: 0,
     cache: null,
+    reasoning: null,
     ...overrides,
   };
 }

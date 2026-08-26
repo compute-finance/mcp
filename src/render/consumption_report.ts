@@ -2,7 +2,11 @@ import {
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
-import { priceSession, OracleCachePricingMissingError } from "../oracle/pricing.js";
+import {
+  cacheAttributionNote,
+  priceSession,
+  OracleCachePricingMissingError,
+} from "../oracle/pricing.js";
 import {
   findSessionFile,
   findLatestSessionFile,
@@ -128,9 +132,17 @@ export async function renderConsumptionReport(
   L.push(...renderTokensBlock(analysis.totals, summary.inferences));
   L.push("");
   if (price && cacheState.missingCount === 0) {
-    L.push(
-      `Total: ${money(round(totalEff, 4))} effective  /  ${money(round(totalNom, 4))} nominal  ·  saved ${money(round(saved, 4))} via cache`,
-    );
+    const cacheNote = cacheAttributionNote(price.cache);
+    if (cacheNote) {
+      L.push(
+        `Total: ${money(round(totalEff, 4))} effective  /  ${money(round(totalNom, 4))} nominal  ·  saved ${money(round(saved, 4))} via cache`,
+      );
+      L.push(`  ${cacheNote}`);
+    } else {
+      L.push(
+        `Total: ${money(round(totalNom, 4))} nominal  ·  oracle publishes no cache pricing for this model`,
+      );
+    }
   } else if (price && cacheState.first !== null) {
     L.push(
       `Total: ${money(round(totalNom, 4))} nominal  ·  effective unavailable for ${cacheState.missingCount} inference(s) — oracle has not published ${cacheState.first.missing} pricing for ${cacheState.first.model}`,

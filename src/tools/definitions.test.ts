@@ -95,6 +95,43 @@ describe("toolDefinitions", () => {
     assert.ok(tool.description.includes("indexMember"));
   });
 
+  it("SHOULD teach all three provenance marks AND that the mark never moves the amount charged ON every price-bearing tool — Bug guarded: an agent told a price is 'inferred' without the invariant discounts a number that bills in full", () => {
+    for (const name of [
+      "data_get_basket",
+      "data_get_price",
+      "data_get_catalog",
+      "compute_estimate",
+    ]) {
+      const tool = toolDefinitions.find((t) => t.name === name);
+      assert.ok(tool, `${name} missing`);
+      for (const mark of ["verified", "inferred", "promotional"]) {
+        assert.ok(tool.description.includes(`'${mark}'`), `${name} omits '${mark}'`);
+      }
+      assert.ok(
+        tool.description.includes("bills exactly as shown"),
+        `${name} omits the bills-as-shown invariant`,
+      );
+      assert.ok(
+        tool.description.includes("not the amount charged"),
+        `${name} omits that the mark rates trust, not cost`,
+      );
+    }
+  });
+
+  it("SHOULD name the reasoning block ON the tools that return it", () => {
+    for (const name of ["data_get_basket", "data_get_price", "data_get_catalog"]) {
+      const tool = toolDefinitions.find((t) => t.name === name);
+      assert.ok(tool, `${name} missing`);
+      assert.ok(tool.description.includes("reasoning"), `${name} omits the reasoning block`);
+    }
+  });
+
+  it("SHOULD NOT offer a separate reasoning cost leg ON compute_estimate — Bug guarded: reasoning tokens already sit inside output_tokens and a second leg doubles the estimate", () => {
+    const tool = toolDefinitions.find((t) => t.name === "compute_estimate");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("no separate reasoning leg"));
+  });
+
   it("SHOULD describe data_get_model_price_at with the discriminated source union — Bug guarded: agents must route on the 'manifest' vs 'catalog' source the oracle actually publishes", () => {
     const tool = toolDefinitions.find((t) => t.name === "data_get_model_price_at");
     assert.ok(tool);

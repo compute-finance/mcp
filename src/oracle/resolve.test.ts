@@ -29,6 +29,25 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function resolveWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    inputKey: "some-model",
+    resolvedKey: "openai/some-model",
+    family: "some.family",
+    provider: { key: "openai", name: "OpenAI" },
+    prices: {
+      inputUsdPerMillion: 3,
+      outputUsdPerMillion: 12,
+      provenance: { input: "inferred", output: "inferred" },
+    },
+    cache: null,
+    reasoning: null,
+    inBasket: false,
+    priceSource: "oracle-catalog",
+    ...over,
+  };
+}
+
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   fetchCalls = [];
@@ -61,18 +80,19 @@ describe("resolveModel", () => {
         prices: {
           inputUsdPerMillion: 15,
           outputUsdPerMillion: 75,
+          provenance: { input: "verified", output: "verified" },
         },
         cache: {
           cachedInput: {
             usdPerMillion: 1.5,
             ratioOfInput: 0.1,
-            source: "test",
-            sourceUrl: null,
+            provenance: "verified",
             createdAt: "2026-06-01T00:00:00Z",
           },
           cacheWrite5m: null,
           cacheWrite1h: null,
         },
+        reasoning: null,
         inBasket: true,
         priceSource: "oracle-basket",
       }),
@@ -89,6 +109,42 @@ describe("resolveModel", () => {
     assert.equal(r.cache.cachedInput?.usdPerMillion, 1.5);
   });
 
+  it("SHOULD carry the base price provenance pair AND the reasoning component THROUGH adaptation", async () => {
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          prices: {
+            inputUsdPerMillion: 5,
+            outputUsdPerMillion: 25,
+            provenance: { input: "verified", output: "promotional" },
+          },
+          reasoning: {
+            reasoningOutput: {
+              usdPerMillion: 25,
+              ratioOfInput: 5,
+              provenance: "inferred",
+              createdAt: null,
+            },
+          },
+        }),
+      ),
+    );
+    const r = await resolveModel("some-model");
+    assert.ok(r !== null);
+    assert.deepEqual(r.base_price_provenance, {
+      input: "verified",
+      output: "promotional",
+    });
+    assert.equal(r.reasoning?.reasoningOutput?.usdPerMillion, 25);
+    assert.equal(r.reasoning?.reasoningOutput?.provenance, "inferred");
+  });
+
+  it("SHOULD keep reasoning null FOR a model the oracle publishes no reasoning price for", async () => {
+    mockFetch(() => jsonResponse(resolveWire()));
+    const r = await resolveModel("some-model");
+    assert.equal(r?.reasoning, null);
+  });
+
   it("SHOULD return ResolvedModel WITH null prices and null cache FOR an off-basket response", async () => {
     mockFetch(() =>
       jsonResponse({
@@ -98,6 +154,7 @@ describe("resolveModel", () => {
         provider: null,
         prices: null,
         cache: null,
+        reasoning: null,
         inBasket: false,
         priceSource: "off-basket",
       }),
@@ -108,6 +165,7 @@ describe("resolveModel", () => {
     assert.equal(r.in_basket, false);
     assert.equal(r.base_input_usd_per_million, null);
     assert.equal(r.base_output_usd_per_million, null);
+    assert.equal(r.base_price_provenance, null);
     assert.equal(r.cache, null);
   });
 
@@ -183,20 +241,6 @@ describe("resolveModel", () => {
 });
 
 describe("resolveModelPrice", () => {
-  function resolveWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      inputKey: "some-model",
-      resolvedKey: "openai/some-model",
-      family: "some.family",
-      provider: { key: "openai", name: "OpenAI" },
-      prices: { inputUsdPerMillion: 3, outputUsdPerMillion: 12 },
-      cache: null,
-      inBasket: false,
-      priceSource: "oracle-catalog",
-      ...over,
-    };
-  }
-
   function basketEntry(over: Partial<ModelPrice> = {}): ModelPrice {
     return {
       model: "anthropic/claude-opus-4.8",
@@ -210,6 +254,7 @@ describe("resolveModelPrice", () => {
       base_input_wei_per_million: 15_000_000,
       base_output_wei_per_million: 75_000_000,
       cache: null,
+      reasoning: null,
       ...over,
     };
   }
@@ -245,6 +290,10 @@ describe("resolveModelPrice", () => {
     assert.equal(priced.price.model, "openai/gpt-x-preview");
     assert.equal(priced.price.base_input_usd_per_million, 3);
     assert.equal(priced.price.base_output_usd_per_million, 12);
+    assert.deepEqual(priced.base_price_provenance, {
+      input: "inferred",
+      output: "inferred",
+    });
   });
 
   it("SHOULD return null IF the resolve request fails — Bug guarded: a 5xx must not surface as a fabricated zero-price entry", async () => {
@@ -261,7 +310,11 @@ describe("resolveModelPrice", () => {
           resolvedKey: "anthropic/claude-opus-4.8",
           family: "anthropic.claude-opus",
           provider: { key: "anthropic", name: "Anthropic" },
-          prices: { inputUsdPerMillion: 15, outputUsdPerMillion: 75 },
+          prices: {
+            inputUsdPerMillion: 15,
+            outputUsdPerMillion: 75,
+            provenance: { input: "verified", output: "verified" },
+          },
           inBasket: true,
           priceSource: "oracle-basket",
         }),
@@ -274,6 +327,27 @@ describe("resolveModelPrice", () => {
     assert.equal(priced.price.display_name, "Claude Opus 4.8");
     assert.equal(priced.price.base_input_wei_per_million, 15_000_000);
     assert.equal(priced.price.base_output_wei_per_million, 75_000_000);
+  });
+
+  it("SHOULD leave the base price unmarked FOR a basket-sourced price — Bug guarded: the resolve response's catalogue mark describes a catalogue number, not the manifest figure the basket entry supplies", async () => {
+    _seedBasketCache([basketEntry()]);
+    mockFetch(() =>
+      jsonResponse(
+        resolveWire({
+          resolvedKey: "anthropic/claude-opus-4.8",
+          prices: {
+            inputUsdPerMillion: 15,
+            outputUsdPerMillion: 75,
+            provenance: { input: "verified", output: "promotional" },
+          },
+          inBasket: true,
+          priceSource: "oracle-basket",
+        }),
+      ),
+    );
+    const priced = await resolveModelPrice("claude-opus-4-8");
+    assert.equal(priced?.price.base_input_wei_per_million, 15_000_000);
+    assert.equal(priced?.base_price_provenance, null);
   });
 
   it("SHOULD fall back to resolvedToModelPrice WITH null wei IF the basket does not contain the resolved key — Bug guarded: an unpublished wei price must read as absent, not as a free model", async () => {
@@ -292,6 +366,10 @@ describe("resolveModelPrice", () => {
     assert.equal(priced.source, "oracle-basket");
     assert.equal(priced.price.model, "anthropic/claude-opus-4.8");
     assert.equal(priced.price.base_input_wei_per_million, null);
+    assert.deepEqual(priced.base_price_provenance, {
+      input: "inferred",
+      output: "inferred",
+    });
   });
 });
 
@@ -310,6 +388,7 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
         markedUpUsdPricePerMillion: { input: 5.25, output: 26.25 },
         releasedAt: null,
         cache: null,
+        reasoning: null,
       },
     ],
   };
@@ -318,16 +397,21 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
     if (url.includes("/v1/oracle/basket")) return jsonResponse(BASKET_WIRE);
     const key = decodeURIComponent(url.split("/").pop()!);
     const inBasket = key === "anthropic/claude-opus-5";
-    return jsonResponse({
-      inputKey: key,
-      resolvedKey: key,
-      family: "anthropic.claude-opus",
-      provider: { key: "anthropic", name: "Anthropic" },
-      prices: { inputUsdPerMillion: 5, outputUsdPerMillion: 25 },
-      cache: null,
-      inBasket,
-      priceSource: inBasket ? "oracle-basket" : "oracle-catalog",
-    });
+    return jsonResponse(
+      resolveWire({
+        inputKey: key,
+        resolvedKey: key,
+        family: "anthropic.claude-opus",
+        provider: { key: "anthropic", name: "Anthropic" },
+        prices: {
+          inputUsdPerMillion: 5,
+          outputUsdPerMillion: 25,
+          provenance: { input: "inferred", output: "inferred" },
+        },
+        inBasket,
+        priceSource: inBasket ? "oracle-basket" : "oracle-catalog",
+      }),
+    );
   }
 
   it("SHOULD return the provider list price FOR both a basket member and a catalog-only model that share it — Bug guarded: pricing a basket member from the marked-up field makes it 5% pricier than an identically priced catalog model", async () => {
@@ -370,7 +454,9 @@ describe("resolvedToModelPrice", () => {
       provider: { key: "anthropic", name: "Anthropic" },
       base_input_usd_per_million: 15,
       base_output_usd_per_million: 75,
+      base_price_provenance: { input: "verified", output: "verified" },
       cache: null,
+      reasoning: null,
       in_basket: true,
       price_source: "oracle-basket",
       ...overrides,
@@ -398,5 +484,17 @@ describe("resolvedToModelPrice", () => {
     assert.equal(p.provider, "");
     assert.equal(p.provider_name, "");
     assert.equal(p.family, "");
+  });
+
+  it("SHOULD carry the reasoning block ACROSS the conversion", () => {
+    const reasoning = {
+      reasoningOutput: {
+        usdPerMillion: 75,
+        ratioOfInput: 5,
+        provenance: "inferred" as const,
+        createdAt: null,
+      },
+    };
+    assert.deepEqual(resolvedToModelPrice(baseResolved({ reasoning })).reasoning, reasoning);
   });
 });

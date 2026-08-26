@@ -5,7 +5,11 @@ import {
   resolveModel,
   resolvedToModelPrice,
 } from "../oracle/client.js";
-import { priceSession, OracleCachePricingMissingError } from "../oracle/pricing.js";
+import {
+  cacheAttributionNote,
+  priceSession,
+  OracleCachePricingMissingError,
+} from "../oracle/pricing.js";
 import {
   findSessionFile,
   findLatestSessionFile,
@@ -70,7 +74,7 @@ export async function renderSessionReport(
 
   let effective_usd: number | null = null;
   let nominal_usd: number | null = null;
-  let cacheNote = "";
+  let cacheNote: string | null = null;
   let cachePricingMissing: OracleCachePricingMissingError | null = null;
   let sessionPrice: ModelPrice | null = null;
   let cached_input_usd_per_million = 0;
@@ -94,7 +98,7 @@ export async function renderSessionReport(
       nominal_usd = round(r.nominal_usd, 4);
       if (r.effective) {
         effective_usd = round(r.effective.effective_usd, 4);
-        cacheNote = r.effective.notes[0];
+        cacheNote = cacheAttributionNote(sessionPrice.cache);
       } else {
         cachePricingMissing = r.cache_pricing_missing;
       }
@@ -146,7 +150,7 @@ export async function renderSessionReport(
     ...renderCostBlock({
       effective_usd,
       nominal_usd,
-      cache_note: cacheNote,
+      cache_multipliers_note: cacheNote,
       cache_pricing_missing: cachePricingMissing
         ? {
             model: cachePricingMissing.model,

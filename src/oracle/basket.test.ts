@@ -25,6 +25,19 @@ function wireModel(over: Record<string, unknown> = {}): Record<string, unknown> 
     markedUpUsdPricePerMillion: { input: 0.42, output: 1.68 },
     releasedAt: "2026-06-01T00:00:00.000Z",
     cache: null,
+    reasoning: null,
+    ...over,
+  };
+}
+
+function wireComponent(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    usdPerMillion: null,
+    ratioOfInput: 0.1,
+    provenance: "inferred",
+    createdAt: "2026-07-21T07:58:42.658Z",
     ...over,
   };
 }
@@ -56,13 +69,7 @@ describe("getBasketPrices", () => {
       models: [
         wireModel({
           cache: {
-            cachedInput: {
-              usdPerMillion: null,
-              ratioOfInput: 0.1,
-              source: "manual",
-              sourceUrl: null,
-              createdAt: "2026-07-21T07:58:42.658Z",
-            },
+            cachedInput: wireComponent(),
             cacheWrite5m: null,
             cacheWrite1h: null,
           },
@@ -72,6 +79,44 @@ describe("getBasketPrices", () => {
     });
     const [m] = await getBasketPrices();
     assert.equal(m.cache?.cachedInput?.usdPerMillion, 0.04);
+  });
+
+  it("SHOULD carry the provenance mark ONTO every adapted cache component — Bug guarded: dropping the mark leaves a consumer unable to tell a sourced price from a guessed one", async () => {
+    mockBasket({
+      models: [
+        wireModel({
+          cache: {
+            cachedInput: wireComponent({ provenance: "verified" }),
+            cacheWrite5m: wireComponent({ ratioOfInput: 1.25, provenance: "promotional" }),
+            cacheWrite1h: null,
+          },
+        }),
+      ],
+      routingFeeRate: 0.05,
+    });
+    const [m] = await getBasketPrices();
+    assert.equal(m.cache?.cachedInput?.provenance, "verified");
+    assert.equal(m.cache?.cacheWrite5m?.provenance, "promotional");
+  });
+
+  it("SHOULD expose the reasoning output price priced off the base input", async () => {
+    mockBasket({
+      models: [
+        wireModel({
+          reasoning: { reasoningOutput: wireComponent({ ratioOfInput: 5 }) },
+        }),
+      ],
+      routingFeeRate: 0.05,
+    });
+    const [m] = await getBasketPrices();
+    assert.equal(m.reasoning?.reasoningOutput?.usdPerMillion, 2);
+    assert.equal(m.reasoning?.reasoningOutput?.provenance, "inferred");
+  });
+
+  it("SHOULD keep reasoning null FOR a model the oracle publishes no reasoning price for", async () => {
+    mockBasket({ models: [wireModel()], routingFeeRate: 0.05 });
+    const [m] = await getBasketPrices();
+    assert.equal(m.reasoning, null);
   });
 
   it("SHOULD issue one basket request FOR concurrent callers — Bug guarded: the model list and the routing fee are read in parallel, which doubles the request on a cold cache", async () => {
@@ -92,13 +137,7 @@ describe("getBasketPrices", () => {
       models: [
         wireModel({
           cache: {
-            cachedInput: {
-              usdPerMillion: 0.04,
-              ratioOfInput: null,
-              source: "manual",
-              sourceUrl: null,
-              createdAt: "2026-07-21T07:58:42.658Z",
-            },
+            cachedInput: wireComponent({ usdPerMillion: 0.04, ratioOfInput: null }),
             cacheWrite5m: null,
             cacheWrite1h: null,
           },
