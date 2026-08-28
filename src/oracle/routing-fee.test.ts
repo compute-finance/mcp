@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { applyRoutingFee, getRoutingFeeRate } from "./routing-fee.js";
-import { _resetBasketCache } from "./client.js";
+import { _resetOracleCache } from "./client.js";
 import { _resetFieldMap, _seedDefaultFieldMap } from "./field-map.js";
 
 let originalFetch: typeof globalThis.fetch;
@@ -16,7 +16,7 @@ function mockBasket(body: unknown, status = 200): void {
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
-  _resetBasketCache();
+  _resetOracleCache();
   _resetFieldMap();
   _seedDefaultFieldMap();
 });
@@ -58,7 +58,7 @@ describe("getRoutingFeeRate", () => {
   it("SHOULD return null IF the rate is not a usable number", async () => {
     mockBasket({ models: [], routingFeeRate: "0.05" });
     assert.equal(await getRoutingFeeRate(), null);
-    _resetBasketCache();
+    _resetOracleCache();
     mockBasket({ models: [], routingFeeRate: -0.05 });
     assert.equal(await getRoutingFeeRate(), null);
   });

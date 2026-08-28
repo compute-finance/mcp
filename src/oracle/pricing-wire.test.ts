@@ -13,8 +13,7 @@ function price(over: Partial<ModelPrice> = {}): ModelPrice {
     released_at: null,
     base_input_usd_per_million: 5,
     base_output_usd_per_million: 25,
-    base_input_wei_per_million: 100,
-    base_output_wei_per_million: 500,
+    base_price_provenance: { input: "verified", output: "verified" },
     cache: null,
     reasoning: null,
     ...over,
@@ -26,8 +25,6 @@ describe("withBilledPrices", () => {
     const p = withBilledPrices(price(), 0.05);
     assert.equal(p.billed_input_usd_per_million, 5.25);
     assert.equal(p.billed_output_usd_per_million, 26.25);
-    assert.equal(p.billed_input_wei_per_million, 105);
-    assert.equal(p.billed_output_wei_per_million, 525);
   });
 
   it("SHOULD leave the base prices untouched — Bug guarded: applying the fee in place erases the only figure comparable across providers", () => {
@@ -40,31 +37,23 @@ describe("withBilledPrices", () => {
     const p = withBilledPrices(price(), null);
     assert.equal(p.billed_input_usd_per_million, null);
     assert.equal(p.billed_output_usd_per_million, null);
-    assert.equal(p.billed_input_wei_per_million, null);
-    assert.equal(p.billed_output_wei_per_million, null);
   });
 
-  it("SHOULD null the billed wei price IF the oracle published no base wei price", () => {
-    const p = withBilledPrices(
-      price({ base_input_wei_per_million: null, base_output_wei_per_million: null }),
-      0.05,
+  it("SHOULD publish no $COMPUTE-denominated price — Bug guarded: the catalogue quotes USD only, and a wei figure served for some models and not others is a price that depends on index membership", () => {
+    const p = withBilledPrices(price(), 0.05);
+    assert.deepEqual(
+      Object.keys(p).filter((k) => k.includes("wei")),
+      [],
     );
-    assert.equal(p.billed_input_wei_per_million, null);
-    assert.equal(p.billed_output_wei_per_million, null);
-    assert.equal(p.billed_input_usd_per_million, 5.25);
   });
 });
 
 describe("usdCost", () => {
-  it("SHOULD return identical costs FOR two models that share provider prices — Bug guarded: basket membership must not move the number", () => {
-    const basketMember = price({ model: "in-basket" });
-    const catalogOnly = price({
-      model: "catalog-only",
-      base_input_wei_per_million: null,
-      base_output_wei_per_million: null,
-    });
+  it("SHOULD return identical costs FOR two models that share provider prices — Bug guarded: index membership must not move the number", () => {
+    const indexMember = price({ model: "index-member" });
+    const catalogOnly = price({ model: "catalog-only" });
     assert.deepEqual(
-      usdCost(basketMember, 1_000_000, 1_000_000, 0.05),
+      usdCost(indexMember, 1_000_000, 1_000_000, 0.05),
       usdCost(catalogOnly, 1_000_000, 1_000_000, 0.05),
     );
   });

@@ -116,7 +116,7 @@ export async function renderConsumptionReport(
 
   const L: string[] = [];
   L.push("Compute Finance Oracle — Session consumption breakdown");
-  L.push("Source: api.compute.finance/v1/oracle/basket + local transcript");
+  L.push("Source: api.compute.finance/v1/oracle/resolve + local transcript");
   L.push("");
   L.push(
     line(

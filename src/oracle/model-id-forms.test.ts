@@ -4,7 +4,7 @@ import {
   getModelPriceAt,
   getModelPriceHistory,
   resolveModelPrice,
-  _resetBasketCache,
+  _resetOracleCache,
   _resetResolveCache,
 } from "./client.js";
 import { _resetFieldMap, _seedDefaultFieldMap } from "./field-map.js";
@@ -60,7 +60,7 @@ beforeEach(() => {
     });
   }) as typeof globalThis.fetch;
   _resetResolveCache();
-  _resetBasketCache();
+  _resetOracleCache();
   _seedDefaultFieldMap();
 });
 
@@ -80,13 +80,21 @@ describe("model parameter — canonical and bare ids", () => {
     await getModelPriceHistory(CANONICAL);
     await getModelPriceAt(CANONICAL, DATE);
 
-    const [resolveUrl, historyUrl, priceAtUrl] = requestedUrls;
-    assert.ok(resolveUrl.endsWith(`/v1/oracle/resolve/${ENCODED}`), resolveUrl);
+    const requested = requestedUrls.join(", ");
     assert.ok(
-      historyUrl.endsWith(`/v1/oracle/models/${ENCODED}/price-history`),
-      historyUrl,
+      requestedUrls.some((u) => u.endsWith(`/v1/oracle/resolve/${ENCODED}`)),
+      requested,
     );
-    assert.ok(priceAtUrl.includes(`/v1/oracle/models/${ENCODED}/price-at?`), priceAtUrl);
+    assert.ok(
+      requestedUrls.some((u) =>
+        u.endsWith(`/v1/oracle/models/${ENCODED}/price-history`),
+      ),
+      requested,
+    );
+    assert.ok(
+      requestedUrls.some((u) => u.includes(`/v1/oracle/models/${ENCODED}/price-at?`)),
+      requested,
+    );
     for (const url of requestedUrls) {
       assert.ok(!url.includes(CANONICAL), url);
     }

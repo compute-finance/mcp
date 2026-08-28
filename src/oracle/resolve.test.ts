@@ -1,15 +1,14 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
+  getIndexPrices,
   resolveModel,
   resolveModelPrice,
   resolvedToModelPrice,
-  _resetBasketCache,
+  _resetOracleCache,
   _resetResolveCache,
-  _seedBasketCache,
 } from "./client.js";
-import { _resetFieldMap, _seedDefaultFieldMap } from "./field-map.js";
-import type { ModelPrice, ResolvedModel } from "./types.js";
+import type { ResolvedModel } from "./types.js";
 
 let originalFetch: typeof globalThis.fetch;
 let fetchCalls: string[] = [];
@@ -52,13 +51,12 @@ beforeEach(() => {
   originalFetch = globalThis.fetch;
   fetchCalls = [];
   _resetResolveCache();
-  _resetBasketCache();
-  _seedDefaultFieldMap();
+  _resetOracleCache();
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  _resetFieldMap();
+  _resetOracleCache();
 });
 
 describe("resolveModel", () => {
@@ -241,24 +239,6 @@ describe("resolveModel", () => {
 });
 
 describe("resolveModelPrice", () => {
-  function basketEntry(over: Partial<ModelPrice> = {}): ModelPrice {
-    return {
-      model: "anthropic/claude-opus-4.8",
-      display_name: "Claude Opus 4.8",
-      provider: "anthropic",
-      provider_name: "Anthropic",
-      family: "anthropic.claude-opus",
-      released_at: null,
-      base_input_usd_per_million: 15,
-      base_output_usd_per_million: 75,
-      base_input_wei_per_million: 15_000_000,
-      base_output_wei_per_million: 75_000_000,
-      cache: null,
-      reasoning: null,
-      ...over,
-    };
-  }
-
   it("SHOULD return null IF the oracle reports the model as off-basket", async () => {
     mockFetch(() =>
       jsonResponse(
@@ -290,7 +270,7 @@ describe("resolveModelPrice", () => {
     assert.equal(priced.price.model, "openai/gpt-x-preview");
     assert.equal(priced.price.base_input_usd_per_million, 3);
     assert.equal(priced.price.base_output_usd_per_million, 12);
-    assert.deepEqual(priced.base_price_provenance, {
+    assert.deepEqual(priced.price.base_price_provenance, {
       input: "inferred",
       output: "inferred",
     });
@@ -301,91 +281,45 @@ describe("resolveModelPrice", () => {
     assert.equal(await resolveModelPrice("anthropic/claude-opus-4.7"), null);
   });
 
-  it("SHOULD enrich WITH the full basket entry (wei prices, display name) FOR an oracle-basket model", async () => {
-    _seedBasketCache([basketEntry()]);
-    mockFetch(() =>
-      jsonResponse(
-        resolveWire({
-          inputKey: "claude-opus-4-8",
-          resolvedKey: "anthropic/claude-opus-4.8",
-          family: "anthropic.claude-opus",
-          provider: { key: "anthropic", name: "Anthropic" },
-          prices: {
-            inputUsdPerMillion: 15,
-            outputUsdPerMillion: 75,
-            provenance: { input: "verified", output: "verified" },
-          },
-          inBasket: true,
-          priceSource: "oracle-basket",
-        }),
-      ),
+  it("SHOULD still price a model the catalogue does not list — Bug guarded: an unreadable catalogue must cost the model its display name, never its price", async () => {
+    mockFetch((url) =>
+      url.includes("/v1/oracle/catalog")
+        ? new Response("oops", { status: 503 })
+        : jsonResponse(
+            resolveWire({
+              resolvedKey: "anthropic/claude-opus-4.8",
+              inBasket: true,
+              priceSource: "oracle-basket",
+            }),
+          ),
     );
     const priced = await resolveModelPrice("claude-opus-4-8");
     assert.ok(priced !== null);
-    assert.equal(priced.source, "oracle-basket");
     assert.equal(priced.price.model, "anthropic/claude-opus-4.8");
-    assert.equal(priced.price.display_name, "Claude Opus 4.8");
-    assert.equal(priced.price.base_input_wei_per_million, 15_000_000);
-    assert.equal(priced.price.base_output_wei_per_million, 75_000_000);
-  });
-
-  it("SHOULD leave the base price unmarked FOR a basket-sourced price — Bug guarded: the resolve response's catalogue mark describes a catalogue number, not the manifest figure the basket entry supplies", async () => {
-    _seedBasketCache([basketEntry()]);
-    mockFetch(() =>
-      jsonResponse(
-        resolveWire({
-          resolvedKey: "anthropic/claude-opus-4.8",
-          prices: {
-            inputUsdPerMillion: 15,
-            outputUsdPerMillion: 75,
-            provenance: { input: "verified", output: "promotional" },
-          },
-          inBasket: true,
-          priceSource: "oracle-basket",
-        }),
-      ),
-    );
-    const priced = await resolveModelPrice("claude-opus-4-8");
-    assert.equal(priced?.price.base_input_wei_per_million, 15_000_000);
-    assert.equal(priced?.base_price_provenance, null);
-  });
-
-  it("SHOULD fall back to resolvedToModelPrice WITH null wei IF the basket does not contain the resolved key — Bug guarded: an unpublished wei price must read as absent, not as a free model", async () => {
-    _seedBasketCache([]);
-    mockFetch(() =>
-      jsonResponse(
-        resolveWire({
-          resolvedKey: "anthropic/claude-opus-4.8",
-          inBasket: true,
-          priceSource: "oracle-basket",
-        }),
-      ),
-    );
-    const priced = await resolveModelPrice("claude-opus-4-8");
-    assert.ok(priced !== null);
-    assert.equal(priced.source, "oracle-basket");
-    assert.equal(priced.price.model, "anthropic/claude-opus-4.8");
-    assert.equal(priced.price.base_input_wei_per_million, null);
-    assert.deepEqual(priced.base_price_provenance, {
-      input: "inferred",
-      output: "inferred",
-    });
+    assert.equal(priced.price.display_name, "anthropic/claude-opus-4.8");
+    assert.equal(priced.price.base_input_usd_per_million, 3);
   });
 });
 
-describe("resolveModelPrice — basket vs catalog parity", () => {
-  const BASKET_WIRE = {
+describe("resolveModelPrice — the snapshot and the catalogue disagree", () => {
+  const MEMBER = "deepseek/deepseek-v4-pro";
+  const CATALOG_ONLY = "deepseek/deepseek-v4-lite";
+  const CATALOG_PRICES: Record<string, { input: number; output: number }> = {
+    [MEMBER]: { input: 1.32, output: 3.96 },
+    [CATALOG_ONLY]: { input: 1.32, output: 3.96 },
+  };
+
+  const STALE_SNAPSHOT_WIRE = {
     routingFeeRate: 0.05,
     models: [
       {
-        id: "anthropic/claude-opus-5",
-        displayName: "Claude Opus 5",
-        provider: { key: "anthropic", name: "Anthropic" },
-        family: "anthropic.claude-opus",
-        weiPricePerMillion: { input: 100, output: 500 },
-        usdPricePerMillion: { input: 5, output: 25 },
-        markedUpWeiPricePerMillion: { input: 105, output: 525 },
-        markedUpUsdPricePerMillion: { input: 5.25, output: 26.25 },
+        id: MEMBER,
+        displayName: "DeepSeek V4 Pro",
+        provider: { key: "deepseek", name: "DeepSeek" },
+        family: "deepseek.v-pro",
+        weiPricePerMillion: { input: 100, output: 200 },
+        usdPricePerMillion: { input: 0.435, output: 0.87 },
+        markedUpUsdPricePerMillion: { input: 0.457, output: 0.914 },
         releasedAt: null,
         cache: null,
         reasoning: null,
@@ -393,37 +327,73 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
     ],
   };
 
-  function serveBasketAndResolve(url: string): Response {
-    if (url.includes("/v1/oracle/basket")) return jsonResponse(BASKET_WIRE);
+  function catalogEntry(key: string, indexMember: boolean) {
+    return {
+      modelKey: key,
+      displayName: indexMember ? "DeepSeek V4 Pro" : "DeepSeek V4 Lite",
+      provider: { key: "deepseek", name: "DeepSeek" },
+      family: indexMember ? "deepseek.v-pro" : "deepseek.v-lite",
+      indexMember,
+      releasedAt: "2026-05-01T00:00:00.000Z",
+      currentPrice: {
+        inputPriceUsdPerMillion: CATALOG_PRICES[key].input,
+        outputPriceUsdPerMillion: CATALOG_PRICES[key].output,
+        provenance: { input: "verified", output: "verified" },
+      },
+      cache: null,
+      reasoning: null,
+    };
+  }
+
+  function serveDisagreeingOracle(url: string): Response {
+    if (url.includes("/v1/oracle/basket")) return jsonResponse(STALE_SNAPSHOT_WIRE);
+    if (url.includes("/v1/oracle/catalog")) {
+      return jsonResponse({
+        models: [catalogEntry(MEMBER, true), catalogEntry(CATALOG_ONLY, false)],
+      });
+    }
     const key = decodeURIComponent(url.split("/").pop()!);
-    const inBasket = key === "anthropic/claude-opus-5";
     return jsonResponse(
       resolveWire({
         inputKey: key,
         resolvedKey: key,
-        family: "anthropic.claude-opus",
-        provider: { key: "anthropic", name: "Anthropic" },
+        family: "deepseek.v-pro",
+        provider: { key: "deepseek", name: "DeepSeek" },
         prices: {
-          inputUsdPerMillion: 5,
-          outputUsdPerMillion: 25,
-          provenance: { input: "inferred", output: "inferred" },
+          inputUsdPerMillion: CATALOG_PRICES[key].input,
+          outputUsdPerMillion: CATALOG_PRICES[key].output,
+          provenance: { input: "verified", output: "verified" },
         },
-        inBasket,
-        priceSource: inBasket ? "oracle-basket" : "oracle-catalog",
+        inBasket: key === MEMBER,
+        priceSource: key === MEMBER ? "oracle-basket" : "oracle-catalog",
       }),
     );
   }
 
-  it("SHOULD return the provider list price FOR both a basket member and a catalog-only model that share it — Bug guarded: pricing a basket member from the marked-up field makes it 5% pricier than an identically priced catalog model", async () => {
-    mockFetch(serveBasketAndResolve);
-    const member = await resolveModelPrice("anthropic/claude-opus-5");
-    const catalogOnly = await resolveModelPrice("anthropic/claude-opus-4.7");
+  it("SHOULD quote an index member at the catalogue price, not the attested one — Bug guarded: a snapshot-sourced quote understates deepseek-v4-pro threefold for as long as an operator holds back the next revision", async () => {
+    mockFetch(serveDisagreeingOracle);
+    const priced = await resolveModelPrice(MEMBER);
+    assert.ok(priced !== null);
+    assert.equal(priced.source, "oracle-basket");
+    assert.equal(priced.price.base_input_usd_per_million, 1.32);
+    assert.equal(priced.price.base_output_usd_per_million, 3.96);
+  });
 
+  it("SHOULD list the index member at the catalogue price — Bug guarded: the index listing and the single-model quote must not disagree about what one model costs", async () => {
+    mockFetch(serveDisagreeingOracle);
+    const [listed] = await getIndexPrices();
+    assert.equal(listed.model, MEMBER);
+    assert.equal(listed.base_input_usd_per_million, 1.32);
+    assert.equal(listed.base_output_usd_per_million, 3.96);
+  });
+
+  it("SHOULD return identical prices FOR an index member and a catalog-only model sharing a provider price — Bug guarded: index membership must not move a model's price", async () => {
+    mockFetch(serveDisagreeingOracle);
+    const member = await resolveModelPrice(MEMBER);
+    const catalogOnly = await resolveModelPrice(CATALOG_ONLY);
     assert.ok(member !== null && catalogOnly !== null);
     assert.equal(member.source, "oracle-basket");
     assert.equal(catalogOnly.source, "oracle-catalog");
-    assert.equal(member.price.base_input_usd_per_million, 5);
-    assert.equal(member.price.base_output_usd_per_million, 25);
     assert.equal(
       member.price.base_input_usd_per_million,
       catalogOnly.price.base_input_usd_per_million,
@@ -434,12 +404,24 @@ describe("resolveModelPrice — basket vs catalog parity", () => {
     );
   });
 
-  it("SHOULD still enrich the basket member WITH wei prices the catalog cannot supply", async () => {
-    mockFetch(serveBasketAndResolve);
-    const member = await resolveModelPrice("anthropic/claude-opus-5");
-    const catalogOnly = await resolveModelPrice("anthropic/claude-opus-4.7");
-    assert.equal(member!.price.base_input_wei_per_million, 100);
-    assert.equal(catalogOnly!.price.base_input_wei_per_million, null);
+  it("SHOULD name both models from the catalogue — Bug guarded: a display name served only to index members is the same membership asymmetry in another field", async () => {
+    mockFetch(serveDisagreeingOracle);
+    const member = await resolveModelPrice(MEMBER);
+    const catalogOnly = await resolveModelPrice(CATALOG_ONLY);
+    assert.equal(member?.price.display_name, "DeepSeek V4 Pro");
+    assert.equal(catalogOnly?.price.display_name, "DeepSeek V4 Lite");
+    assert.equal(member?.price.released_at, "2026-05-01T00:00:00.000Z");
+    assert.equal(catalogOnly?.price.released_at, "2026-05-01T00:00:00.000Z");
+  });
+
+  it("SHOULD never read the attested snapshot to answer a price — Bug guarded: any request to it is a second pricing basis waiting to diverge", async () => {
+    mockFetch(serveDisagreeingOracle);
+    await resolveModelPrice(MEMBER);
+    await getIndexPrices();
+    assert.deepEqual(
+      fetchCalls.filter((u) => u.includes("/v1/oracle/basket")),
+      [],
+    );
   });
 });
 
@@ -475,6 +457,14 @@ describe("resolvedToModelPrice", () => {
     );
     assert.equal(p.base_input_usd_per_million, 0);
     assert.equal(p.base_output_usd_per_million, 0);
+  });
+
+  it("SHOULD carry the base price provenance pair ACROSS the conversion", () => {
+    const p = resolvedToModelPrice(baseResolved());
+    assert.deepEqual(p.base_price_provenance, {
+      input: "verified",
+      output: "verified",
+    });
   });
 
   it("SHOULD coerce null provider/family to empty strings", () => {

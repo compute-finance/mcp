@@ -4,16 +4,6 @@ import { loadFromDisk, persistToDisk } from "./field-map-persistence.js";
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface BasketFieldMap {
-  models_array: string;
-  model_id: string;
-  display_name: string;
-  provider: string;
-  provider_key: string;
-  provider_name: string;
-  family: string;
-  released_at: string;
-  base_usd_price: string;
-  base_wei_price: string;
   routing_fee_rate: string;
 }
 
@@ -34,16 +24,6 @@ export interface FieldMap {
 // ── Defaults (current known field names) ────────────────────────────
 
 export const DEFAULT_BASKET: BasketFieldMap = {
-  models_array: "models",
-  model_id: "id",
-  display_name: "displayName",
-  provider: "provider",
-  provider_key: "key",
-  provider_name: "name",
-  family: "family",
-  released_at: "releasedAt",
-  base_usd_price: "usdPricePerMillion",
-  base_wei_price: "weiPricePerMillion",
   routing_fee_rate: "routingFeeRate",
 };
 
@@ -72,78 +52,7 @@ function fieldType(prop: SchemaObj): string {
   return (prop.type as string) ?? "unknown";
 }
 
-function hasInputOutput(prop: SchemaObj): boolean {
-  const sub = getProperties(prop);
-  return "input" in sub && "output" in sub;
-}
-
-// ── Semantic field matcher ──────────────────────────────────────────
-
-interface MatchRule {
-  required: string[];
-  preferred?: string[];
-  exclude?: string[];
-  type?: string;
-  inputOutput?: boolean;
-}
-
-function findField(
-  props: Properties,
-  defaultName: string,
-  rule: MatchRule,
-): { name: string; exact: boolean } | null {
-  if (defaultName in props) return { name: defaultName, exact: true };
-
-  const candidates: Array<{ name: string; score: number }> = [];
-  for (const [name, schema] of Object.entries(props)) {
-    const low = name.toLowerCase();
-    if (rule.type && fieldType(schema) !== rule.type) continue;
-    if (rule.inputOutput && !hasInputOutput(schema)) continue;
-    if (rule.exclude?.some((kw) => low.includes(kw))) continue;
-    if (!rule.required.every((kw) => low.includes(kw))) continue;
-
-    let score = 10;
-    if (rule.preferred) {
-      for (const kw of rule.preferred) {
-        if (low.includes(kw)) score += 3;
-      }
-    }
-    score -= name.length * 0.01;
-    candidates.push({ name, score });
-  }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.score - a.score);
-  return { name: candidates[0].name, exact: false };
-}
-
 // ── Basket field derivation ─────────────────────────────────────────
-
-const BASKET_MATCHERS: Record<
-  Exclude<
-    keyof BasketFieldMap,
-    "models_array" | "provider_key" | "provider_name" | "routing_fee_rate"
-  >,
-  MatchRule
-> = {
-  model_id: { required: ["id"], type: "string", exclude: ["oracle", "prefix", "key"] },
-  display_name: { required: ["name"], preferred: ["display"], type: "string", exclude: ["provider"] },
-  provider: { required: ["provider"], type: "object" },
-  family: { required: ["family"], exclude: ["count", "id"], type: "string" },
-  released_at: { required: ["releas"], type: "string" },
-  base_usd_price: {
-    required: ["usd"],
-    exclude: ["marked", "markup"],
-    type: "object",
-    inputOutput: true,
-  },
-  base_wei_price: {
-    required: ["price"],
-    preferred: ["wei", "compute", "ct"],
-    exclude: ["usd", "marked", "markup"],
-    type: "object",
-    inputOutput: true,
-  },
-};
 
 function deriveBasketMap(responseSchema: SchemaObj): {
   map: BasketFieldMap;
@@ -153,21 +62,6 @@ function deriveBasketMap(responseSchema: SchemaObj): {
   const topProps = getProperties(responseSchema);
   const mismatches: string[] = [];
   const unmapped: string[] = [];
-
-  // 1. Find models array
-  let models_array = DEFAULT_BASKET.models_array;
-  if (!(models_array in topProps)) {
-    const found = Object.entries(topProps).find(([, s]) => {
-      const item = getItemSchema(s);
-      return item && fieldType(item) === "object";
-    });
-    if (found) {
-      models_array = found[0];
-      mismatches.push(`models_array: ${DEFAULT_BASKET.models_array} → ${models_array}`);
-    } else {
-      unmapped.push("models_array");
-    }
-  }
 
   let routing_fee_rate = DEFAULT_BASKET.routing_fee_rate;
   if (!(routing_fee_rate in topProps)) {
@@ -188,98 +82,7 @@ function deriveBasketMap(responseSchema: SchemaObj): {
     }
   }
 
-  const arraySchema = topProps[models_array];
-  if (!arraySchema) {
-    return { map: DEFAULT_BASKET, mismatches, unmapped: ["models_array"] };
-  }
-  const itemSchema = getItemSchema(arraySchema);
-  if (!itemSchema) {
-    return { map: DEFAULT_BASKET, mismatches, unmapped: ["model_item_schema"] };
-  }
-  const modelProps = getProperties(itemSchema);
-
-  // 2. Map each model-level field via matchers
-  const mapped: Record<string, string> = {};
-  for (const [role, rule] of Object.entries(BASKET_MATCHERS)) {
-    const defaultName = DEFAULT_BASKET[role as keyof BasketFieldMap];
-    const result = findField(modelProps, defaultName, rule);
-    if (result) {
-      mapped[role] = result.name;
-      if (!result.exact) {
-        mismatches.push(`${role}: ${defaultName} → ${result.name}`);
-      }
-    } else {
-      mapped[role] = defaultName;
-      unmapped.push(role);
-    }
-  }
-
-  // 3. Ensure wei price ≠ usd price
-  if (mapped.base_wei_price === mapped.base_usd_price) {
-    for (const [name, schema] of Object.entries(modelProps)) {
-      if (name === mapped.base_usd_price) continue;
-      const low = name.toLowerCase();
-      if (
-        fieldType(schema) === "object" &&
-        hasInputOutput(schema) &&
-        !low.includes("usd") &&
-        !low.includes("marked") &&
-        !low.includes("markup")
-      ) {
-        mapped.base_wei_price = name;
-        mismatches.push(`base_wei_price: collision resolved → ${name}`);
-        break;
-      }
-    }
-  }
-
-  // 4. Provider subfields
-  let provider_key = DEFAULT_BASKET.provider_key;
-  let provider_name = DEFAULT_BASKET.provider_name;
-  const providerSchema = modelProps[mapped.provider];
-  if (providerSchema) {
-    const providerProps = getProperties(providerSchema);
-    if (!(provider_key in providerProps)) {
-      const found = Object.entries(providerProps).find(
-        ([n, s]) => fieldType(s) === "string" && n.toLowerCase().includes("key"),
-      );
-      if (found) {
-        provider_key = found[0];
-        mismatches.push(`provider_key: ${DEFAULT_BASKET.provider_key} → ${provider_key}`);
-      } else {
-        unmapped.push("provider_key");
-      }
-    }
-    if (!(provider_name in providerProps)) {
-      const found = Object.entries(providerProps).find(
-        ([n, s]) => fieldType(s) === "string" && n.toLowerCase().includes("name"),
-      );
-      if (found) {
-        provider_name = found[0];
-        mismatches.push(`provider_name: ${DEFAULT_BASKET.provider_name} → ${provider_name}`);
-      } else {
-        unmapped.push("provider_name");
-      }
-    }
-  }
-
-  return {
-    map: {
-      models_array,
-      model_id: mapped.model_id,
-      display_name: mapped.display_name,
-      provider: mapped.provider,
-      provider_key,
-      provider_name,
-      family: mapped.family,
-      released_at: mapped.released_at,
-      base_usd_price: mapped.base_usd_price,
-      base_wei_price: mapped.base_wei_price,
-      routing_fee_rate,
-    },
-    mismatches,
-    unmapped,
-  };
+  return { map: { routing_fee_rate }, mismatches, unmapped };
 }
 
 // ── Reconstitution field derivation ─────────────────────────────────
@@ -438,10 +241,8 @@ export function _seedDefaultFieldMap(): void {
 }
 
 export const _internals = {
-  findField,
   deriveBasketMap,
   deriveReconMap,
   DEFAULT_BASKET,
   DEFAULT_RECON,
-  BASKET_MATCHERS,
 };

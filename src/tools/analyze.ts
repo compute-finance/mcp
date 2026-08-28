@@ -1,5 +1,5 @@
 import {
-  getBasketPrices,
+  getIndexPrices,
   getActiveMethodologyVersion,
   resolveModel,
   resolvedToModelPrice,
@@ -48,8 +48,8 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
   const path = pathOrError as string;
 
   const usage = parseSessionUsage(path);
-  const [basket, methodologyVersion, resolved, rate] = await Promise.all([
-    getBasketPrices(),
+  const [indexModels, methodologyVersion, resolved, rate] = await Promise.all([
+    getIndexPrices(),
     getActiveMethodologyVersion(),
     resolveModel(usage.model),
     getRoutingFeeRate(),
@@ -61,7 +61,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
       : null;
   const totalIn =
     usage.raw_input_tokens + usage.cache_read_tokens + usage.cache_creation_tokens;
-  const counterfactual = basket
+  const counterfactual = indexModels
     .map((p) => ({
       model: p.model,
       provider: p.provider,
@@ -168,7 +168,7 @@ export async function rawAnalyzeSession(a: Record<string, unknown>) {
     pricing_note: PRICING_NOTE,
     profile: prof,
     methodology_version: methodologyVersion,
-    source: "api.compute.finance/v1/oracle/basket + local transcript",
+    source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/catalog + local transcript",
   };
 }
 
@@ -221,11 +221,10 @@ export async function rawAnalyzeInferences(a: Record<string, unknown>) {
     by_tool: result.by_tool,
     cache_hit_ratio: round(result.cache_hit_ratio, 3),
     inferences: inferencesWithCost,
-    source: "api.compute.finance/v1/oracle/basket + local transcript",
+    source: "api.compute.finance/v1/oracle/resolve + local transcript",
   };
 }
 
 export async function getHistory() {
-  const basket = await getBasketPrices();
-  return getStats(basket);
+  return getStats();
 }

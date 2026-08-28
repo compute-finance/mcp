@@ -29,8 +29,7 @@ function priceWithCache(cache: CachePricing | null): ModelPrice {
     released_at: null,
     base_input_usd_per_million: 5,
     base_output_usd_per_million: 25,
-    base_input_wei_per_million: 0,
-    base_output_wei_per_million: 0,
+    base_price_provenance: null,
     cache,
     reasoning: null,
   };

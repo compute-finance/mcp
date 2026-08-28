@@ -50,7 +50,7 @@ describe("getStats", () => {
   });
 
   it("SHOULD return zero counts WHEN history is empty", async () => {
-    const stats = await getStats([]);
+    const stats = await getStats();
     assert.equal(stats.sample_size, 0);
     assert.equal(stats.distinct_sessions, 0);
     assert.equal(stats.cumulative_effective_usd, 0);
@@ -59,7 +59,7 @@ describe("getStats", () => {
 
   it("SHOULD include every record WHEN no excludeSessionId is given", async () => {
     writeRecords([{}, {}, {}]);
-    const stats = await getStats([]);
+    const stats = await getStats();
     assert.equal(stats.sample_size, 3);
     assert.equal(stats.distinct_sessions, 3);
   });
@@ -70,7 +70,7 @@ describe("getStats", () => {
       { session_id: "b", effective_usd: 20 },
       { session_id: "c", effective_usd: 30 },
     ]);
-    const stats = await getStats([], "b");
+    const stats = await getStats("b");
     assert.equal(stats.sample_size, 2);
     assert.equal(stats.cumulative_effective_usd, 40);
     assert.equal(stats.by_profile.mixed.median_effective_usd, 20);
@@ -81,14 +81,14 @@ describe("getStats", () => {
       { session_id: "a", effective_usd: 10 },
       { session_id: "b", effective_usd: 20 },
     ]);
-    const stats = await getStats([], "ghost");
+    const stats = await getStats("ghost");
     assert.equal(stats.sample_size, 2);
     assert.equal(stats.cumulative_effective_usd, 30);
   });
 
   it("SHOULD report zero sample_size WHEN excluding leaves no records", async () => {
     writeRecords([{ session_id: "only" }]);
-    const stats = await getStats([], "only");
+    const stats = await getStats("only");
     assert.equal(stats.sample_size, 0);
     assert.deepEqual(stats.by_profile, {});
   });
@@ -100,7 +100,7 @@ describe("getStats", () => {
       { session_id: "c", profile: "edit-heavy", effective_usd: 9 },
       { session_id: "d", profile: "reasoning-heavy", effective_usd: 100 },
     ]);
-    const stats = await getStats([], "c");
+    const stats = await getStats("c");
     assert.equal(stats.by_profile["edit-heavy"].n, 2);
     assert.equal(stats.by_profile["edit-heavy"].median_effective_usd, 6);
     assert.equal(stats.by_profile["reasoning-heavy"].n, 1);

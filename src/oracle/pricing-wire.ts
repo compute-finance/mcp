@@ -12,8 +12,6 @@ export const PRICING_NOTE =
 export interface BilledPrices {
   billed_input_usd_per_million: number | null;
   billed_output_usd_per_million: number | null;
-  billed_input_wei_per_million: number | null;
-  billed_output_wei_per_million: number | null;
 }
 
 export function billed(base: number | null, rate: number | null): number | null {
@@ -28,8 +26,6 @@ export function withBilledPrices(
     ...price,
     billed_input_usd_per_million: billed(price.base_input_usd_per_million, rate),
     billed_output_usd_per_million: billed(price.base_output_usd_per_million, rate),
-    billed_input_wei_per_million: billed(price.base_input_wei_per_million, rate),
-    billed_output_wei_per_million: billed(price.base_output_wei_per_million, rate),
   };
 }
 
