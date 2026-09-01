@@ -19,7 +19,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
-  getBasketPrices,
+  getIndexPrices,
   getScu,
   getBreakdown,
   getCpi,
@@ -111,7 +111,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     switch (name) {
       case "data_get_basket": {
         const [models, rate, contexts] = await Promise.all([
-          getBasketPrices(),
+          getIndexPrices(),
           getRoutingFeeRate(),
           tryCatalogContexts(),
         ]);
@@ -120,12 +120,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
             const context = contextFor(contexts, m.model);
             return {
               ...withBilledPrices(m, rate),
-              ...(context ? modelContext(m, null, context, rate) : CONTEXT_UNAVAILABLE),
+              ...(context ? modelContext(m, context, rate) : CONTEXT_UNAVAILABLE),
             };
           }),
           routing_fee_rate: rate,
           pricing_note: PRICING_NOTE,
-          source: "api.compute.finance/v1/oracle/basket + /v1/oracle/catalog",
+          source: "api.compute.finance/v1/oracle/catalog",
         });
       }
       case "data_get_price": {
@@ -140,15 +140,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const context = contextFor(contexts, priced.price.model);
         return textWithContext({
           ...withBilledPrices(priced.price, rate),
-          base_price_provenance: priced.base_price_provenance,
           ...(context
-            ? modelContext(priced.price, priced.base_price_provenance, context, rate)
+            ? modelContext(priced.price, context, rate)
             : CONTEXT_UNAVAILABLE),
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,
-          source:
-            "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog",
+          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/catalog",
         });
       }
       case "data_get_scu":
@@ -226,18 +224,16 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           output_tokens: outT,
           ...quoteAtContextTier(
             priced.price,
-            priced.base_price_provenance,
             requireContextFor(contexts, priced.price.model),
             rate,
             inT,
             outT,
           ),
-          base_price_provenance: priced.base_price_provenance,
+          base_price_provenance: priced.price.base_price_provenance,
           routing_fee_rate: rate,
           price_source: priced.source,
           pricing_note: PRICING_NOTE,
-          source:
-            "api.compute.finance/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog",
+          source: "api.compute.finance/v1/oracle/resolve + /v1/oracle/catalog",
         });
       }
       case "compute_compare": {
@@ -245,20 +241,19 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof inT !== "number") return errorText(inT.error);
         const outT = requireFiniteNumber(a.output_tokens, "output_tokens");
         if (typeof outT !== "number") return errorText(outT.error);
-        const [basket, methodologyVersion, rate, contexts] = await Promise.all([
-          getBasketPrices(),
+        const [indexModels, methodologyVersion, rate, contexts] = await Promise.all([
+          getIndexPrices(),
           getActiveMethodologyVersion(),
           getRoutingFeeRate(),
           getCatalogContexts(),
         ]);
-        const ranked = basket
+        const ranked = indexModels
           .map((p) => ({
             model: p.model,
             provider: p.provider,
             family: p.family,
             ...quoteAtContextTier(
               p,
-              null,
               requireContextFor(contexts, p.model),
               rate,
               inT,
@@ -279,7 +274,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           routing_fee_rate: rate,
           pricing_note: PRICING_NOTE,
           methodology_version: methodologyVersion,
-          source: "api.compute.finance/v1/oracle/basket + /v1/oracle/catalog",
+          source: "api.compute.finance/v1/oracle/catalog",
         });
       }
 

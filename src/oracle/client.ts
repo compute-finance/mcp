@@ -13,7 +13,6 @@ import {
   ScuFamilyRepresentative,
   ScuValue,
 } from "./types.js";
-import { getFieldMap } from "./field-map.js";
 import { trimFloatNoise } from "../render/format.js";
 
 export const API_BASE = process.env.CF_API_BASE ?? "https://api.compute.finance";
@@ -24,12 +23,8 @@ interface CacheEntry<T> {
 }
 
 const CACHE_TTL_MS = 60_000;
-let cpiCache: CacheEntry<unknown> | null = null;
-let cpiInflight: Promise<unknown> | null = null;
-let scuCache: CacheEntry<unknown> | null = null;
-let reconstitutionsCache: CacheEntry<unknown> | null = null;
-let methodologyCache: CacheEntry<unknown> | null = null;
-let basketCache: CacheEntry<ModelPrice[]> | null = null;
+const jsonCache = new Map<string, CacheEntry<unknown>>();
+const jsonInflight = new Map<string, Promise<unknown>>();
 const driftWarned = new Set<string>();
 
 export function warnDriftOnce(key: string, message: string): void {
@@ -46,29 +41,31 @@ async function fetchJson(path: string): Promise<unknown> {
   return res.json();
 }
 
-export async function getCpi(): Promise<unknown> {
-  if (cpiCache && Date.now() - cpiCache.fetchedAt < CACHE_TTL_MS) {
-    return cpiCache.data;
+function cachedJson(path: string): Promise<unknown> {
+  const cached = jsonCache.get(path);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return Promise.resolve(cached.data);
   }
-  if (cpiInflight) return cpiInflight;
-  cpiInflight = fetchJson("/v1/oracle/basket")
+  const inflight = jsonInflight.get(path);
+  if (inflight) return inflight;
+  const request = fetchJson(path)
     .then((data) => {
-      cpiCache = { data, fetchedAt: Date.now() };
+      jsonCache.set(path, { data, fetchedAt: Date.now() });
       return data;
     })
     .finally(() => {
-      cpiInflight = null;
+      jsonInflight.delete(path);
     });
-  return cpiInflight;
+  jsonInflight.set(path, request);
+  return request;
+}
+
+export async function getCpi(): Promise<unknown> {
+  return cachedJson("/v1/oracle/basket");
 }
 
 export async function getScu(): Promise<unknown> {
-  if (scuCache && Date.now() - scuCache.fetchedAt < CACHE_TTL_MS) {
-    return scuCache.data;
-  }
-  const data = await fetchJson("/v1/oracle/scu");
-  scuCache = { data, fetchedAt: Date.now() };
-  return data;
+  return cachedJson("/v1/oracle/scu");
 }
 
 export async function getBreakdown(): Promise<unknown> {
@@ -120,24 +117,11 @@ export async function getScuValue(): Promise<ScuValue | null> {
 }
 
 export async function getReconstitutions(): Promise<unknown> {
-  if (
-    reconstitutionsCache &&
-    Date.now() - reconstitutionsCache.fetchedAt < CACHE_TTL_MS
-  ) {
-    return reconstitutionsCache.data;
-  }
-  const data = await fetchJson("/v1/oracle/reconstitutions");
-  reconstitutionsCache = { data, fetchedAt: Date.now() };
-  return data;
+  return cachedJson("/v1/oracle/reconstitutions");
 }
 
 export async function getMethodology(): Promise<unknown> {
-  if (methodologyCache && Date.now() - methodologyCache.fetchedAt < CACHE_TTL_MS) {
-    return methodologyCache.data;
-  }
-  const data = await fetchJson("/v1/oracle/methodology");
-  methodologyCache = { data, fetchedAt: Date.now() };
-  return data;
+  return cachedJson("/v1/oracle/methodology");
 }
 
 export type HistoryGranularity = "per-revision" | "daily" | "weekly";
@@ -172,15 +156,8 @@ export async function getModelPriceHistory(
   );
 }
 
-let catalogCache: CacheEntry<unknown> | null = null;
-
 export async function getCatalog(): Promise<unknown> {
-  if (catalogCache && Date.now() - catalogCache.fetchedAt < CACHE_TTL_MS) {
-    return catalogCache.data;
-  }
-  const data = await fetchJson("/v1/oracle/catalog");
-  catalogCache = { data, fetchedAt: Date.now() };
-  return data;
+  return cachedJson("/v1/oracle/catalog");
 }
 
 export async function getModelPriceAt(
@@ -229,19 +206,6 @@ export async function getActiveMethodologyVersion(): Promise<number | null> {
   } catch {
     return null;
   }
-}
-
-type AnyModel = Record<string, unknown>;
-
-function cpiModels(cpi: unknown, arrayField: string): AnyModel[] {
-  const c = cpi as Record<string, unknown>;
-  return (c[arrayField] ?? []) as AnyModel[];
-}
-
-function inputOutput(obj: unknown): { input: number; output: number } {
-  if (!obj || typeof obj !== "object") return { input: 0, output: 0 };
-  const o = obj as Record<string, number>;
-  return { input: o.input ?? 0, output: o.output ?? 0 };
 }
 
 function adaptComponent(
@@ -310,52 +274,69 @@ function adaptReasoning(
   }
 }
 
-export async function getBasketPrices(): Promise<ModelPrice[]> {
-  if (basketCache && Date.now() - basketCache.fetchedAt < CACHE_TTL_MS) {
-    return basketCache.data;
+interface WireCatalogModel {
+  modelKey: string;
+  displayName?: string | null;
+  provider?: { key?: string; name?: string } | null;
+  family?: string | null;
+  indexMember?: boolean;
+  releasedAt?: string | null;
+  currentPrice?: {
+    inputPriceUsdPerMillion: number;
+    outputPriceUsdPerMillion: number;
+    provenance?: BasePriceProvenance | null;
+  } | null;
+  cache?: OracleCacheBlock | null;
+  reasoning?: OracleReasoningBlock | null;
+}
+
+function adaptCatalogModel(m: WireCatalogModel): ModelPrice | null {
+  const price = m.currentPrice;
+  if (typeof m.modelKey !== "string" || !m.modelKey || !price) return null;
+  if (!m.family) {
+    warnDriftOnce(
+      `family:${m.modelKey}`,
+      `catalog model ${m.modelKey} missing required family field — upstream schema drift`,
+    );
   }
-  const fm = getFieldMap().basket;
-  const cpi = await getCpi();
+  const input = price.inputPriceUsdPerMillion;
+  return {
+    model: m.modelKey,
+    display_name: m.displayName ?? m.modelKey,
+    provider: m.provider?.key ?? "",
+    provider_name: m.provider?.name ?? "",
+    family: m.family ?? "",
+    released_at: m.releasedAt ?? null,
+    base_input_usd_per_million: input,
+    base_output_usd_per_million: price.outputPriceUsdPerMillion,
+    base_price_provenance: price.provenance ?? null,
+    cache: adaptCache(m.modelKey, input, m.cache),
+    reasoning: adaptReasoning(m.modelKey, input, m.reasoning),
+  };
+}
+
+async function catalogModels(): Promise<WireCatalogModel[]> {
+  const catalog = (await getCatalog()) as { models?: unknown } | null;
+  return Array.isArray(catalog?.models) ? (catalog.models as WireCatalogModel[]) : [];
+}
+
+function adaptCatalogModels(models: WireCatalogModel[]): ModelPrice[] {
   const out: ModelPrice[] = [];
-  for (const m of cpiModels(cpi, fm.models_array)) {
-    const id = m[fm.model_id] as string;
-    if (!id) continue;
-    const providerObj = m[fm.provider] as Record<string, unknown> | undefined;
-    const providerKey = (providerObj?.[fm.provider_key] as string) ?? "unknown";
-    const providerName = (providerObj?.[fm.provider_name] as string) ?? providerKey;
-    const baseUsd = inputOutput(m[fm.base_usd_price]);
-    const baseWei = inputOutput(m[fm.base_wei_price]);
-    const rawCache = (m.cache ?? null) as OracleCacheBlock | null;
-    const rawReasoning = (m.reasoning ?? null) as OracleReasoningBlock | null;
-    const family = m[fm.family] as string | undefined;
-    if (!family) {
-      warnDriftOnce(
-        `family:${id}`,
-        `basket model ${id} missing required family field — upstream schema drift`,
-      );
-    }
-    out.push({
-      model: id,
-      display_name: (m[fm.display_name] as string) ?? id,
-      provider: providerKey,
-      provider_name: providerName,
-      family: family ?? "",
-      released_at: (m[fm.released_at] as string | null) ?? null,
-      base_input_usd_per_million: baseUsd.input,
-      base_output_usd_per_million: baseUsd.output,
-      base_input_wei_per_million: baseWei.input,
-      base_output_wei_per_million: baseWei.output,
-      cache: adaptCache(id, baseUsd.input, rawCache),
-      reasoning: adaptReasoning(id, baseUsd.input, rawReasoning),
-    });
+  for (const m of models) {
+    const price = adaptCatalogModel(m);
+    if (price) out.push(price);
   }
-  basketCache = { data: out, fetchedAt: Date.now() };
   return out;
 }
 
-export async function getModelPrice(model: string): Promise<ModelPrice | null> {
-  const all = await getBasketPrices();
-  return all.find((m) => m.model === model) ?? null;
+export async function getCatalogPrices(): Promise<ModelPrice[]> {
+  return adaptCatalogModels(await catalogModels());
+}
+
+export async function getIndexPrices(): Promise<ModelPrice[]> {
+  return adaptCatalogModels(
+    (await catalogModels()).filter((m) => m.indexMember === true),
+  );
 }
 
 interface WireResolveResponse {
@@ -417,24 +398,14 @@ export function _resetResolveCache(): void {
   resolveCache.clear();
 }
 
-export function _resetBasketCache(): void {
-  basketCache = null;
-  cpiCache = null;
-  cpiInflight = null;
-}
-
-export function _resetCatalogCache(): void {
-  catalogCache = null;
-}
-
-export function _seedBasketCache(models: ModelPrice[]): void {
-  basketCache = { data: models, fetchedAt: Date.now() };
+export function _resetOracleCache(): void {
+  jsonCache.clear();
+  jsonInflight.clear();
 }
 
 export interface ResolvedModelPrice {
   price: ModelPrice;
   source: Exclude<PriceSource, "off-basket">;
-  base_price_provenance: BasePriceProvenance | null;
 }
 
 export async function resolveModelPrice(
@@ -442,18 +413,34 @@ export async function resolveModelPrice(
 ): Promise<ResolvedModelPrice | null> {
   const resolved = await resolveModel(model);
   if (!resolved || resolved.price_source === "off-basket") return null;
-  const source = resolved.price_source;
-  if (resolved.in_basket) {
-    const manifestEntry = await getModelPrice(resolved.resolved_key);
-    if (manifestEntry) {
-      return { price: manifestEntry, source, base_price_provenance: null };
-    }
-  }
   return {
-    price: resolvedToModelPrice(resolved),
-    source,
-    base_price_provenance: resolved.base_price_provenance,
+    price: await namedModelPrice(resolved),
+    source: resolved.price_source,
   };
+}
+
+export async function namedModelPrice(r: ResolvedModel): Promise<ModelPrice> {
+  const price = resolvedToModelPrice(r);
+  const listed = await catalogListing(price.model);
+  return listed
+    ? {
+        ...price,
+        display_name: listed.displayName ?? price.display_name,
+        released_at: listed.releasedAt ?? null,
+      }
+    : price;
+}
+
+async function catalogListing(modelKey: string): Promise<WireCatalogModel | null> {
+  try {
+    return (await catalogModels()).find((m) => m.modelKey === modelKey) ?? null;
+  } catch (err) {
+    warnDriftOnce(
+      "catalog-listing",
+      `${(err as Error).message} Serving prices without catalogue display names.`,
+    );
+    return null;
+  }
 }
 
 export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
@@ -466,8 +453,7 @@ export function resolvedToModelPrice(r: ResolvedModel): ModelPrice {
     released_at: null,
     base_input_usd_per_million: r.base_input_usd_per_million ?? 0,
     base_output_usd_per_million: r.base_output_usd_per_million ?? 0,
-    base_input_wei_per_million: null,
-    base_output_wei_per_million: null,
+    base_price_provenance: r.base_price_provenance,
     cache: r.cache,
     reasoning: r.reasoning,
   };

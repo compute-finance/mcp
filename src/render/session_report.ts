@@ -1,9 +1,9 @@
 import {
-  getBasketPrices,
+  getIndexPrices,
   getActiveMethodologyVersion,
   getScuValue,
+  namedModelPrice,
   resolveModel,
-  resolvedToModelPrice,
 } from "../oracle/client.js";
 import {
   cacheAttributionNote,
@@ -46,9 +46,9 @@ export async function renderSessionReport(
   const usage = parseSessionUsage(path);
   const { profile, out_in_ratio } = classifyProfile(usage);
 
-  let basket: ModelPrice[];
+  let indexModels: ModelPrice[];
   try {
-    basket = await getBasketPrices();
+    indexModels = await getIndexPrices();
   } catch (err) {
     // Oracle unreachable: raw usage only, DO NOT log.
     return renderOracleUnreachable(usage, profile, err as Error);
@@ -79,33 +79,26 @@ export async function renderSessionReport(
   let sessionPrice: ModelPrice | null = null;
   let cached_input_usd_per_million = 0;
   if (normalized && resolved) {
-    const price = resolvedToModelPrice(resolved);
-    // resolve names a model by its key; prefer the basket's display name when the model is in-basket.
-    const basketRow = basket.find((p) => p.model === price.model);
-    sessionPrice = basketRow
-      ? { ...price, display_name: basketRow.display_name }
-      : price;
-    {
-      cached_input_usd_per_million =
-        sessionPrice.cache?.cachedInput?.usdPerMillion ?? 0;
-      const r = priceSession(
-        sessionPrice,
-        usage.raw_input_tokens,
-        usage.cache_read_tokens,
-        usage.cache_creation_tokens,
-        usage.output_tokens,
-      );
-      nominal_usd = round(r.nominal_usd, 4);
-      if (r.effective) {
-        effective_usd = round(r.effective.effective_usd, 4);
-        cacheNote = cacheAttributionNote(sessionPrice.cache);
-      } else {
-        cachePricingMissing = r.cache_pricing_missing;
-      }
+    sessionPrice = await namedModelPrice(resolved);
+    cached_input_usd_per_million =
+      sessionPrice.cache?.cachedInput?.usdPerMillion ?? 0;
+    const r = priceSession(
+      sessionPrice,
+      usage.raw_input_tokens,
+      usage.cache_read_tokens,
+      usage.cache_creation_tokens,
+      usage.output_tokens,
+    );
+    nominal_usd = round(r.nominal_usd, 4);
+    if (r.effective) {
+      effective_usd = round(r.effective.effective_usd, 4);
+      cacheNote = cacheAttributionNote(sessionPrice.cache);
+    } else {
+      cachePricingMissing = r.cache_pricing_missing;
     }
   }
 
-  const stats = await getStats(basket, usage.session_id);
+  const stats = await getStats(usage.session_id);
 
   logSession({
     session_id: usage.session_id,
@@ -130,7 +123,7 @@ export async function renderSessionReport(
   const L: string[] = [];
   L.push("Compute Finance Oracle — Session analysis");
   L.push(
-    `Source: api.compute.finance/v1/oracle/basket + local transcript (measured)${
+    `Source: api.compute.finance/v1/oracle/resolve + /v1/oracle/catalog + local transcript (measured)${
       methodologyVersion === null ? "" : ` · oracle methodology v${methodologyVersion}`
     }`,
   );
@@ -171,7 +164,11 @@ export async function renderSessionReport(
     })) {
       L.push(l);
     }
-    const ladder = renderXIndexLadderBlock({ scu, basket, price: sessionPrice });
+    const ladder = renderXIndexLadderBlock({
+      scu,
+      basket: indexModels,
+      price: sessionPrice,
+    });
     if (ladder.length) {
       L.push("");
       for (const l of ladder) L.push(l);

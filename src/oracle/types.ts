@@ -33,6 +33,10 @@ export interface BaseRates {
   base_output_usd_per_million: number;
 }
 
+export interface MarkedBaseRates extends BaseRates {
+  base_price_provenance: BasePriceProvenance | null;
+}
+
 export interface ContextTierRates extends BaseRates {
   from_input_tokens: number;
   provenance: BasePriceProvenance | null;
@@ -50,15 +54,13 @@ export interface ModelContext {
   max_input_tokens: number | null;
 }
 
-export interface ModelPrice extends BaseRates {
+export interface ModelPrice extends MarkedBaseRates {
   model: string;
   display_name: string;
   provider: string;
   provider_name: string;
   family: string;
   released_at: string | null;
-  base_input_wei_per_million: number | null;
-  base_output_wei_per_million: number | null;
   cache: CachePricing | null;
   reasoning: ReasoningPricing | null;
 }

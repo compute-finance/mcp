@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ModelPrice } from "../oracle/types.js";
 
 function storageDir(): string {
   return process.env.COMPUTE_FINANCE_DIR ?? join(homedir(), ".compute-finance");
@@ -97,10 +96,7 @@ export interface Insight {
   evidence: Record<string, unknown>;
 }
 
-function computeInsights(
-  recs: SessionRecord[],
-  basket: ModelPrice[],
-): Insight[] {
+function computeInsights(recs: SessionRecord[]): Insight[] {
   const out: Insight[] = [];
   if (recs.length < 5) return out;
 
@@ -133,7 +129,6 @@ function computeInsights(
 }
 
 export async function getStats(
-  basket: ModelPrice[],
   excludeSessionId?: string,
 ): Promise<HistoryStats> {
   const all = readHistory();
@@ -163,6 +158,6 @@ export async function getStats(
       Math.round(recs.reduce((a, r) => a + (r.effective_usd ?? 0), 0) * 1e4) / 1e4,
     cumulative_nominal_usd:
       Math.round(recs.reduce((a, r) => a + (r.nominal_usd ?? 0), 0) * 1e4) / 1e4,
-    insights: computeInsights(recs, basket),
+    insights: computeInsights(recs),
   };
 }

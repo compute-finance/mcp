@@ -2,11 +2,10 @@ import { getCatalog, warnDriftOnce } from "./client.js";
 import { billed, usdCost, type UsdCost } from "./pricing-wire.js";
 import {
   PROVENANCE_MARKS,
-  type BasePriceProvenance,
-  type BaseRates,
   type ContextLadder,
   type ContextTier,
   type ContextTierRates,
+  type MarkedBaseRates,
   type ModelContext,
   type OracleContextTierWire,
   type PriceProvenance,
@@ -129,8 +128,7 @@ function withBilledTier(rung: ContextTierRates, rate: number | null): ContextTie
 }
 
 function contextLadder(
-  rates: BaseRates,
-  baseProvenance: BasePriceProvenance | null,
+  rates: MarkedBaseRates,
   catalog: CatalogContext,
   routingFeeRate: number | null,
 ): ContextLadder {
@@ -138,7 +136,7 @@ function contextLadder(
     from_input_tokens: 0,
     base_input_usd_per_million: rates.base_input_usd_per_million,
     base_output_usd_per_million: rates.base_output_usd_per_million,
-    provenance: baseProvenance,
+    provenance: rates.base_price_provenance,
   };
   const rungs = catalog.tiers.map((t) => ({
     from_input_tokens: t.fromInputTokens,
@@ -153,13 +151,12 @@ function contextLadder(
 }
 
 export function modelContext(
-  rates: BaseRates,
-  baseProvenance: BasePriceProvenance | null,
+  rates: MarkedBaseRates,
   catalog: CatalogContext,
   routingFeeRate: number | null,
 ): ModelContext {
   return {
-    context_tiers: contextLadder(rates, baseProvenance, catalog, routingFeeRate),
+    context_tiers: contextLadder(rates, catalog, routingFeeRate),
     max_input_tokens: catalog.maxInputTokens,
   };
 }
@@ -182,14 +179,13 @@ export interface ContextTierQuote extends UsdCost {
 }
 
 export function quoteAtContextTier(
-  rates: BaseRates,
-  baseProvenance: BasePriceProvenance | null,
+  rates: MarkedBaseRates,
   catalog: CatalogContext,
   routingFeeRate: number | null,
   inputTokens: number,
   outputTokens: number,
 ): ContextTierQuote {
-  const ladder = contextLadder(rates, baseProvenance, catalog, routingFeeRate);
+  const ladder = contextLadder(rates, catalog, routingFeeRate);
   const applied = selectContextTier(ladder, inputTokens);
   const max_input_tokens = catalog.maxInputTokens;
   return {

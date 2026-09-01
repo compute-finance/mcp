@@ -10,12 +10,13 @@ import {
   tryCatalogContexts,
   type CatalogContext,
 } from "./context-tiers.js";
-import { _resetCatalogCache } from "./client.js";
-import type { BaseRates, ContextTier } from "./types.js";
+import { _resetOracleCache } from "./client.js";
+import type { ContextTier, MarkedBaseRates } from "./types.js";
 
-const FLAT: BaseRates = {
+const FLAT: MarkedBaseRates = {
   base_input_usd_per_million: 1,
   base_output_usd_per_million: 5,
+  base_price_provenance: null,
 };
 
 function catalogContext(over: Partial<CatalogContext> = {}): CatalogContext {
@@ -68,7 +69,7 @@ function captureStderr(): { text: () => string; restore: () => void } {
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
-  _resetCatalogCache();
+  _resetOracleCache();
 });
 
 afterEach(() => {
@@ -77,7 +78,7 @@ afterEach(() => {
 
 describe("modelContext", () => {
   it("SHOULD give a flat model one rung starting at zero — Bug guarded: a model the catalogue lists with no rungs must not force the caller to branch on whether a model happens to be tiered", () => {
-    const { context_tiers } = modelContext(FLAT, null, catalogContext(), 0.05);
+    const { context_tiers } = modelContext(FLAT, catalogContext(), 0.05);
     assert.equal(context_tiers.length, 1);
     assert.equal(context_tiers[0].from_input_tokens, 0);
     assert.equal(context_tiers[0].base_input_usd_per_million, 1);
@@ -87,7 +88,6 @@ describe("modelContext", () => {
   it("SHOULD stack the catalogue rungs above the flat rate", () => {
     const { context_tiers } = modelContext(
       FLAT,
-      null,
       catalogContext({
         tiers: [
           {
@@ -112,7 +112,6 @@ describe("modelContext", () => {
   it("SHOULD price every rung on both bases — Bug guarded: a rung quoted on the base basis alone lets an agent budget a long context without the routing fee", () => {
     const { context_tiers } = modelContext(
       FLAT,
-      null,
       catalogContext({
         tiers: [
           {
@@ -130,15 +129,14 @@ describe("modelContext", () => {
   });
 
   it("SHOULD null a rung's billed price IF the routing fee rate is unknown — Bug guarded: falling through to the base rate would present an unknown fee as no fee", () => {
-    const { context_tiers } = modelContext(FLAT, null, catalogContext(), null);
+    const { context_tiers } = modelContext(FLAT, catalogContext(), null);
     assert.equal(context_tiers[0].billed_input_usd_per_million, null);
     assert.equal(context_tiers[0].billed_output_usd_per_million, null);
   });
 
   it("SHOULD fan a rung's single mark out across both directions — Bug guarded: the vendor quotes a rung as one line, and collapsing the pair instead would drop the flat rate's asymmetric marks", () => {
     const { context_tiers } = modelContext(
-      FLAT,
-      { input: "promotional", output: "inferred" },
+      { ...FLAT, base_price_provenance: { input: "promotional", output: "inferred" } },
       catalogContext({
         tiers: [
           {
@@ -161,15 +159,10 @@ describe("modelContext", () => {
     });
   });
 
-  it("SHOULD leave the flat rung unmarked FOR an attested manifest figure — Bug guarded: a rung is marked exactly when its price came from the catalogue, same as any other base price", () => {
-    const { context_tiers } = modelContext(FLAT, null, catalogContext(), 0.05);
-    assert.equal(context_tiers[0].provenance, null);
-  });
-
   it("SHOULD report the ceiling the model declares, and null when it declares none", () => {
-    assert.equal(modelContext(FLAT, null, catalogContext(), 0.05).max_input_tokens, null);
+    assert.equal(modelContext(FLAT, catalogContext(), 0.05).max_input_tokens, null);
     assert.equal(
-      modelContext(FLAT, null, catalogContext({ maxInputTokens: 5000 }), 0.05)
+      modelContext(FLAT, catalogContext({ maxInputTokens: 5000 }), 0.05)
         .max_input_tokens,
       5000,
     );
@@ -179,7 +172,6 @@ describe("modelContext", () => {
 describe("selectContextTier", () => {
   const ladder = modelContext(
     FLAT,
-    null,
     catalogContext({
       tiers: [
         {
@@ -223,7 +215,7 @@ describe("selectContextTier", () => {
   });
 
   it("SHOULD return the single rung FOR a flat model at any input size", () => {
-    const flat = modelContext(FLAT, null, catalogContext(), 0.05).context_tiers;
+    const flat = modelContext(FLAT, catalogContext(), 0.05).context_tiers;
     assert.equal(selectContextTier(flat, 0).from_input_tokens, 0);
     assert.equal(selectContextTier(flat, 10_000_000).base_input_usd_per_million, 1);
   });
@@ -243,8 +235,8 @@ describe("quoteAtContextTier", () => {
   });
 
   it("SHOULD move the quoted cost onto the rung the input selects AND name that rung — Bug guarded: pricing a long context at the flat rate is the whole defect the ladder exists to close", () => {
-    const below = quoteAtContextTier(FLAT, null, tiered, 0.05, 1999, 1000);
-    const at = quoteAtContextTier(FLAT, null, tiered, 0.05, 2000, 1000);
+    const below = quoteAtContextTier(FLAT, tiered, 0.05, 1999, 1000);
+    const at = quoteAtContextTier(FLAT, tiered, 0.05, 2000, 1000);
     assert.equal(below.applied_context_tier.from_input_tokens, 0);
     assert.equal(below.base_usd_cost, 0.006999);
     assert.equal(at.applied_context_tier.from_input_tokens, 2000);
@@ -252,8 +244,8 @@ describe("quoteAtContextTier", () => {
   });
 
   it("SHOULD flag the ceiling one token above it AND still quote the cost — Bug guarded: the ceiling is the largest input the model accepts, not the first it refuses, and a refused request is still worth pricing", () => {
-    const at = quoteAtContextTier(FLAT, null, tiered, 0.05, 5000, 1000);
-    const above = quoteAtContextTier(FLAT, null, tiered, 0.05, 5001, 1000);
+    const at = quoteAtContextTier(FLAT, tiered, 0.05, 5000, 1000);
+    const above = quoteAtContextTier(FLAT, tiered, 0.05, 5001, 1000);
     assert.equal(at.exceeds_max_input_tokens, false);
     assert.equal(above.exceeds_max_input_tokens, true);
     assert.equal(above.max_input_tokens, 5000);
@@ -261,7 +253,7 @@ describe("quoteAtContextTier", () => {
   });
 
   it("SHOULD never flag a model that declares no ceiling", () => {
-    const quote = quoteAtContextTier(FLAT, null, catalogContext(), 0.05, 50_000_000, 0);
+    const quote = quoteAtContextTier(FLAT, catalogContext(), 0.05, 50_000_000, 0);
     assert.equal(quote.max_input_tokens, null);
     assert.equal(quote.exceeds_max_input_tokens, false);
   });
@@ -336,7 +328,6 @@ describe("getCatalogContexts", () => {
       const contexts = await getCatalogContexts();
       const ladder = modelContext(
         FLAT,
-        null,
         requireContextFor(contexts, "zero-rung"),
         0.05,
       ).context_tiers;
@@ -362,7 +353,6 @@ describe("getCatalogContexts", () => {
       const contexts = await getCatalogContexts();
       const ladder = modelContext(
         FLAT,
-        null,
         requireContextFor(contexts, "negative-rung"),
         0.05,
       ).context_tiers;
@@ -389,7 +379,6 @@ describe("getCatalogContexts", () => {
       const contexts = await getCatalogContexts();
       const ladder = modelContext(
         FLAT,
-        null,
         requireContextFor(contexts, "twin-rung"),
         0.05,
       ).context_tiers;

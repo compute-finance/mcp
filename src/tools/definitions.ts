@@ -49,7 +49,7 @@ const CONTEXT_TIER_NOTE =
   "so a model priced the same at every input size has exactly one rung and needs no special case. " +
   "The rung is chosen by the whole input side of a request — prompt plus cache reads plus cache writes — over half-open ranges, so an input landing exactly on `from_input_tokens` takes that rung. " +
   "Rung rates carry base_*/billed_* like every other price; only the flat rate enters the SCU index. " +
-  "Each rung carries the same {input, output} `provenance` pair as elsewhere: the first repeats the base price's mark, null when that is an attested manifest figure; a higher rung is a catalogue number and takes on both directions the single mark the vendor quotes it under. " +
+  "Each rung carries the same {input, output} `provenance` pair as elsewhere: the first repeats the base price's mark; a higher rung is a catalogue number and takes on both directions the single mark the vendor quotes it under. " +
   "`max_input_tokens` is the largest input the model accepts. It is null when the model declares no window of its own — not unbounded: the request-body ceiling still applies, there is just no per-model limit. Above a declared window the request is refused before it reaches the provider.";
 
 const LADDER_UNKNOWN_NOTE =
@@ -69,10 +69,10 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_basket",
     description:
-      "All models in the oracle basket — provider, family (e.g. openai.gpt, anthropic.claude, google.gemini, xai.grok), base_* USD and wei prices per million tokens (the provider list price), billed_* prices (what compute.finance charges), per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) and a `reasoning` block carrying `reasoningOutput` (the whole block is null when the model has no reasoning price), all priced on the same base. `routing_fee_rate` ships once at the top level; billed_* is null when the oracle does not publish it. Compare models on base_*; budget on billed_*. " +
-      `${PROVENANCE_NOTE} Every cache and reasoning component carries one. A base price is marked exactly when it came from the catalogue, so base_*/billed_* carry no mark here — a basket entry's base_* are the attested manifest figures. data_get_price marks base_* for the same model whenever it serves catalogue numbers instead. ` +
+      "Every model in the current SCU index — provider, family (e.g. openai.gpt, anthropic.claude, google.gemini, xai.grok), base_* USD prices per million tokens (the provider list price), billed_* prices (what compute.finance charges), per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) and a `reasoning` block carrying `reasoningOutput` (the whole block is null when the model has no reasoning price), all priced on the same base. `routing_fee_rate` ships once at the top level; billed_* is null when the oracle does not publish it. Compare models on base_*; budget on billed_*. " +
+      `${PROVENANCE_NOTE} \`base_price_provenance\` carries one mark for base_input and one for base_output, and every cache and reasoning component carries its own. ` +
       `\`context_tiers\` carries each model's long-context price ladder. ${CONTEXT_TIER_NOTE} ${LADDER_UNKNOWN_NOTE} ` +
-      "Source: Oracle API. For a single model, use data_get_price instead.",
+      "Prices are the live catalogue figures the exchange bills, identical to what data_get_price serves for the same model: index membership decides which models are listed here, never what they cost. For the prices a published index revision attested on-chain — which may lag the catalogue — use data_get_cpi. Source: Oracle API (/v1/oracle/catalog). For a single model, use data_get_price instead.",
     inputSchema: NO_ARGS,
     annotations: ORACLE,
     adaptedOutput: true,
@@ -80,10 +80,10 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_price",
     description:
-      "Price for a single oracle-tracked model — basket members and catalog-only entries on identical terms. Returns base_input/base_output USD per million tokens (the provider list price), `routing_fee_rate`, and billed_* = base × (1 + routing_fee_rate) — what compute.finance charges. Wei prices are populated for basket members and null otherwise. Per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) and the `reasoning` block carrying `reasoningOutput` (the whole block is null when the model has no reasoning price) are on the base basis. Compare models on base_*: two models with the same provider price return the same numbers regardless of basket membership. " +
-      `${PROVENANCE_NOTE} \`base_price_provenance\` carries one mark for base_input and one for base_output exactly when they are catalogue numbers, and is null when they are the attested manifest figures no mark describes — read the field, price_source does not decide it. Every cache and reasoning component carries its own mark either way. ` +
+      "Price for a single oracle-tracked model — index members and catalog-only entries on identical terms. Returns base_input/base_output USD per million tokens (the provider list price), `routing_fee_rate`, and billed_* = base × (1 + routing_fee_rate) — what compute.finance charges. Per-component cache pricing (cachedInput, cacheWrite5m, cacheWrite1h) and the `reasoning` block carrying `reasoningOutput` (the whole block is null when the model has no reasoning price) are on the base basis. Every price is the live catalogue figure the exchange bills, so two models with the same provider price return the same numbers regardless of index membership. " +
+      `${PROVENANCE_NOTE} \`base_price_provenance\` carries one mark for base_input and one for base_output, populated for every tracked model. Every cache and reasoning component carries its own mark. ` +
       `\`context_tiers\` carries the model's long-context price ladder. ${CONTEXT_TIER_NOTE} ${LADDER_UNKNOWN_NOTE} ` +
-      "`price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog). Models are identified by their canonical vendor-prefixed id ('anthropic/claude-opus-4.8', 'openai/gpt-5.5'); the bare name ('gpt-5.5') resolves to the same model, and the response echoes the canonical id. The vendor slug is not always provider.key (alibaba → qwen, xai → x-ai, moonshot → moonshotai), so pass an id the API returned rather than assembling one.",
+      "`price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/catalog). Models are identified by their canonical vendor-prefixed id ('anthropic/claude-opus-4.8', 'openai/gpt-5.5'); the bare name ('gpt-5.5') resolves to the same model, and the response echoes the canonical id. The vendor slug is not always provider.key (alibaba → qwen, xai → x-ai, moonshot → moonshotai), so pass an id the API returned rather than assembling one.",
     inputSchema: {
       type: "object",
       properties: {
@@ -116,7 +116,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "data_get_cpi",
     description:
-      "Full Compute Price Index — raw oracle response with the canonical vendor-prefixed model id, provider, family, raw and marked-up prices, scuUsd, revisionVersion, last-updated timestamp. Source: Oracle API. Use data_get_basket for a cleaner view focused on pricing; use this for the complete index data. For the per-family blended-cost breakdown, use data_get_breakdown.",
+      "Full Compute Price Index — raw oracle response with the canonical vendor-prefixed model id, provider, family, raw and marked-up prices, scuUsd, revisionVersion, last-updated timestamp. The prices are the figures the latest published revision attested on-chain: they change only when an operator publishes a new revision, so they may lag the live catalogue and must not be quoted as what a model costs now — for that use data_get_price or data_get_basket. Source: Oracle API. Use this for the complete index data as attested. For the per-family blended-cost breakdown, use data_get_breakdown.",
     inputSchema: NO_ARGS,
     annotations: ORACLE,
   },
@@ -276,11 +276,11 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_estimate",
     description:
-      "Nominal USD cost for any oracle-tracked model given input/output token counts — basket members and catalog-only models on identical terms. Cache reads and cache writes belong inside input_tokens and are charged at the full input rate here; no cache discount is applied. Returns `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges), plus the `routing_fee_rate` they derive from. Compare models on base_usd_cost; budget on billed_usd_cost. " +
-      `${PROVENANCE_NOTE} \`base_price_provenance\` marks the input and output prices this cost is built from exactly when they are catalogue numbers, and is null when they are attested manifest figures — read the field, price_source does not decide it. ` +
+      "Nominal USD cost for any oracle-tracked model given input/output token counts — index members and catalog-only models on identical terms. Cache reads and cache writes belong inside input_tokens and are charged at the full input rate here; no cache discount is applied. Returns `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges), plus the `routing_fee_rate` they derive from. Compare models on base_usd_cost; budget on billed_usd_cost. " +
+      `${PROVENANCE_NOTE} \`base_price_provenance\` marks the input and output prices this cost is built from, populated for every tracked model. ` +
       `The cost is quoted at the rung input_tokens selects on the model's ladder, returned whole as \`applied_context_tier\` so the rate behind the number is visible; for every rung read \`context_tiers\` on data_get_price. ${CONTEXT_TIER_NOTE} ${LADDER_REQUIRED_NOTE} ` +
       "`exceeds_max_input_tokens` is true when input_tokens is above `max_input_tokens`: the cost is still quoted, because a refused request is worth pricing before you reshape it, but the request as supplied would be rejected. " +
-      "`price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis, so two models with the same provider price return the same cost. Reasoning tokens are billed inside output_tokens, so this estimate adds no separate reasoning leg; read the model's reasoning price from data_get_price. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/basket + /v1/oracle/catalog). For a cost with the cache discount applied, use analyze_session on a real transcript. Models are identified by their canonical vendor-prefixed id ('anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'); the bare name ('gpt-5.5') resolves to the same model, and the response echoes the canonical id. The vendor slug is not always provider.key (alibaba → qwen, xai → x-ai, moonshot → moonshotai), so pass an id the API returned rather than assembling one.",
+      "`price_source` ('oracle-basket' | 'oracle-catalog') names the serving endpoint only and does not change the pricing basis, so two models with the same provider price return the same cost. Reasoning tokens are billed inside output_tokens, so this estimate adds no separate reasoning leg; read the model's reasoning price from data_get_price. Errors with 'Model not tracked by oracle' for unknown keys. Source: Oracle API (/v1/oracle/resolve + /v1/oracle/catalog). For a cost with the cache discount applied, use analyze_session on a real transcript. Models are identified by their canonical vendor-prefixed id ('anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'); the bare name ('gpt-5.5') resolves to the same model, and the response echoes the canonical id. The vendor slug is not always provider.key (alibaba → qwen, xai → x-ai, moonshot → moonshotai), so pass an id the API returned rather than assembling one.",
     inputSchema: {
       type: "object",
       properties: {
@@ -300,10 +300,10 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "compute_compare",
     description:
-      "Rank all basket models by nominal cost for a workload. Source: Oracle API (/v1/oracle/basket + /v1/oracle/catalog). Cache reads and cache writes belong inside input_tokens and are charged at the full input rate here; no cache discount is applied. Each row carries `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges); ranking is by base_usd_cost, and since the routing fee is one global rate the order is identical on either basis. " +
+      "Rank every model in the current SCU index by nominal cost for a workload. Source: Oracle API (/v1/oracle/catalog). Cache reads and cache writes belong inside input_tokens and are charged at the full input rate here; no cache discount is applied. Each row carries `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges); ranking is by base_usd_cost, and since the routing fee is one global rate the order is identical on either basis. " +
       "Every row is priced at the rung input_tokens selects on that model's own ladder, returned whole as `applied_context_tier`, so a model that gets pricier past a threshold ranks where it truly lands at this size; for every rung read `context_tiers` on data_get_basket. Rows also carry `max_input_tokens` and `exceeds_max_input_tokens` — a row flagged true is still priced and still ranked, but that model would refuse the request. " +
       `${CONTEXT_TIER_NOTE} ${LADDER_REQUIRED_NOTE} ` +
-      "Returns the sorted list plus a grouping by family (e.g. openai.gpt, anthropic.claude). Covers basket members only — for a catalog-only model use compute_estimate, whose numbers are on the same basis. Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
+      "Returns the sorted list plus a grouping by family (e.g. openai.gpt, anthropic.claude). Covers index members only — for any other tracked model use compute_estimate, whose numbers are on the same basis. Use to answer 'which model is cheapest?' or 'how much would this cost on a different model?'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -370,7 +370,7 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "analyze_session",
     description:
-      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across all basket models, profile classification. `current_model_cost` is on the base (provider list) basis, stated in `current_model_cost_basis`; `counterfactual_nominal` rows carry `base_usd_cost` and `billed_usd_cost`, so the session and the counterfactual are directly comparable on base. Counterfactual rows quote each model's base rate and never a long-context rung: a rung is picked per request, and a session's summed input is not one giant request, so pricing the total on a higher rung would overcharge — expect these rows to sit below compute_compare for a model that gets pricier past a context length. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. `current_model_cost.effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
+      "Raw JSON session analysis — token totals, effective/nominal cost with cache breakdown, counterfactual across every model in the current SCU index, profile classification. `current_model_cost` is on the base (provider list) basis, stated in `current_model_cost_basis`; `counterfactual_nominal` rows carry `base_usd_cost` and `billed_usd_cost`, so the session and the counterfactual are directly comparable on base. Counterfactual rows quote each model's base rate and never a long-context rung: a rung is picked per request, and a session's summed input is not one giant request, so pricing the total on a higher rung would overcharge — expect these rows to sit below compute_compare for a model that gets pricier past a context length. `usage.prompts` counts user messages, `usage.inferences` counts assistant replies, `usage.tool_calls` counts tool_use blocks. `current_model_cost.effective_usd` is `null` when the oracle has not published cache pricing for the model; `nominal_usd` stays populated as an upper-bound. Source: local Claude Code transcript + Oracle API. For pre-formatted output use render_session_report. Omit session_id for the most recent session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -397,8 +397,8 @@ export const toolDefinitions: ToolDef[] = [
   {
     name: "telemetry_get_history",
     description:
-      "Aggregate stats across logged sessions (deduped, last-wins). Source: local ~/.compute-finance/ storage + Oracle API. Sample size, cumulative effective vs nominal cost, per-profile medians, insights (cache dominance). Insights require at least 5 sessions.",
+      "Aggregate stats across logged sessions (deduped, last-wins). Source: local ~/.compute-finance/ storage. Sample size, cumulative effective vs nominal cost, per-profile medians, insights (cache dominance). Insights require at least 5 sessions.",
     inputSchema: NO_ARGS,
-    annotations: { ...LOCAL, openWorldHint: true },
+    annotations: LOCAL,
   },
 ];

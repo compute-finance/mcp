@@ -2,8 +2,8 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import {
   API_BASE,
-  getBasketPrices,
-  getModelPrice,
+  getCatalogPrices,
+  getIndexPrices,
   getScu,
   getBreakdown,
   getCpi,
@@ -20,7 +20,7 @@ import {
 } from "./oracle/client.js";
 import { costUsd } from "./oracle/pricing.js";
 import { getRoutingFeeRate } from "./oracle/routing-fee.js";
-import { usdCost } from "./oracle/pricing-wire.js";
+import { usdCost, withBilledPrices } from "./oracle/pricing-wire.js";
 import {
   getCatalogContexts,
   modelContext,
@@ -37,11 +37,55 @@ before(async () => {
   await initFieldMap();
 }, { timeout: 15_000 });
 
+interface CatalogEntry {
+  modelKey: string;
+  indexMember: boolean;
+  currentPrice: {
+    inputPriceUsdPerMillion: number;
+    outputPriceUsdPerMillion: number;
+  };
+}
+
+interface PublishedSide {
+  usdPerMillion: number;
+}
+
+async function catalogEntries(): Promise<CatalogEntry[]> {
+  const catalog = (await getCatalog()) as { models: CatalogEntry[] };
+  return catalog.models;
+}
+
+async function publishedBilledPrices(): Promise<
+  Record<string, { input: PublishedSide; output: PublishedSide }>
+> {
+  const res = await fetch(`${API_BASE}/v1/oracle/pricing`);
+  assert.ok(res.ok, `/v1/oracle/pricing returned ${res.status}`);
+  const body = (await res.json()) as {
+    models: Record<string, { input: PublishedSide; output: PublishedSide }>;
+  };
+  return body.models;
+}
+
+// /v1/oracle/pricing rounds to three significant figures, which alone costs up to 0.5%; the band clears that and still sits far under the routing fee a wrong pricing basis moves a quote by.
+const BILLED_TOLERANCE_RATIO = 0.01;
+
+function assertWithinTolerance(
+  actual: number | null,
+  expected: number,
+  label: string,
+): void {
+  assert.ok(actual !== null, `${label}: no billed price published`);
+  assert.ok(
+    Math.abs(actual - expected) <= Math.abs(expected) * BILLED_TOLERANCE_RATIO,
+    `${label}: MCP quotes ${actual}, the exchange bills ${expected}`,
+  );
+}
+
 describe("smoke: data_get_basket", () => {
   it("returns a non-empty models array with required pricing fields", { timeout: 10_000 }, async () => {
-    const models = await getBasketPrices();
-    assert.ok(Array.isArray(models), "basket must be an array");
-    assert.ok(models.length > 0, "basket must not be empty");
+    const models = await getIndexPrices();
+    assert.ok(Array.isArray(models), "index members must be an array");
+    assert.ok(models.length > 0, "the index must not be empty");
 
     const first = models[0];
     assert.equal(typeof first.model, "string");
@@ -56,7 +100,7 @@ describe("smoke: data_get_basket", () => {
   });
 
   it("publishes well-formed cache blocks where present, for at least one model", { timeout: 10_000 }, async () => {
-    const models = await getBasketPrices();
+    const models = await getIndexPrices();
     // The oracle doesn't publish cache for every model and the MCP handles absence — validate blocks where present, not completeness.
     let withCache = 0;
     for (const m of models) {
@@ -80,11 +124,11 @@ describe("smoke: data_get_basket", () => {
       }
       withCache += 1;
     }
-    assert.ok(withCache > 0, "no basket model carries a cache block — the cache pricing pipeline is broken");
+    assert.ok(withCache > 0, "no index member carries a cache block — the cache pricing pipeline is broken");
   });
 
   it("publishes a marked reasoning output price where present, for at least one model", { timeout: 10_000 }, async () => {
-    const models = await getBasketPrices();
+    const models = await getIndexPrices();
     let withReasoning = 0;
     for (const m of models) {
       const c = m.reasoning?.reasoningOutput;
@@ -98,36 +142,76 @@ describe("smoke: data_get_basket", () => {
       );
       withReasoning += 1;
     }
-    assert.ok(withReasoning > 0, "no basket model carries a reasoning price — the reasoning pricing pipeline is broken");
+    assert.ok(withReasoning > 0, "no index member carries a reasoning price — the reasoning pricing pipeline is broken");
   });
 });
 
 describe("smoke: data_get_price", () => {
-  it("echoes the requested basket-member model with a well-formed pricing shape", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
-    assert.ok(basket.length > 0, "basket must be non-empty");
-    const sample = basket[0];
-    const price = await getModelPrice(sample.model);
-    assert.ok(price !== null, `${sample.model} must be in basket`);
-    assert.equal(price.model, sample.model);
-    assert.ok(price.base_input_usd_per_million > 0);
-    assert.ok(price.base_output_usd_per_million > 0);
-    assert.equal(typeof price.provider, "string");
-    assert.equal(typeof price.family, "string");
+  it("echoes the requested index-member model with a well-formed pricing shape", { timeout: 10_000 }, async () => {
+    const indexModels = await getIndexPrices();
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    const sample = indexModels[0];
+    const priced = await resolveModelPrice(sample.model);
+    assert.ok(priced !== null, `${sample.model} must resolve to a price`);
+    assert.equal(priced.price.model, sample.model);
+    assert.ok(priced.price.base_input_usd_per_million > 0);
+    assert.ok(priced.price.base_output_usd_per_million > 0);
+    assert.equal(typeof priced.price.provider, "string");
+    assert.equal(typeof priced.price.family, "string");
+    assert.ok(priced.price.base_price_provenance !== null, "a catalogue price is always marked");
   });
 
   it("returns null for nonexistent model", { timeout: 10_000 }, async () => {
-    const price = await getModelPrice("nonexistent-model-xyz-999");
-    assert.equal(price, null);
+    assert.equal(await resolveModelPrice("nonexistent-model-xyz-999"), null);
   });
 
-  it("SHOULD report the same base price for a basket member as /v1/oracle/resolve serves — Bug guarded: sourcing basket members from the marked-up field opens a 5% gap between the two endpoints", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
-    const sample = basket[0];
-    const resolved = await resolveModel(sample.model);
-    assert.ok(resolved !== null, `${sample.model} must resolve`);
-    assert.equal(sample.base_input_usd_per_million, resolved.base_input_usd_per_million);
-    assert.equal(sample.base_output_usd_per_million, resolved.base_output_usd_per_million);
+  it("SHOULD quote every index member at the price the live catalogue publishes for it — Bug guarded: sourcing an index member from the attested snapshot keeps quoting the pre-correction price for as long as an operator holds back the next revision", { timeout: 15_000 }, async () => {
+    const [indexModels, entries] = await Promise.all([
+      getIndexPrices(),
+      catalogEntries(),
+    ]);
+    const current = new Map(entries.map((e) => [e.modelKey, e.currentPrice]));
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    for (const m of indexModels) {
+      const price = current.get(m.model);
+      assert.ok(price, `${m.model} is served as an index member the catalogue does not list`);
+      assert.equal(m.base_input_usd_per_million, price.inputPriceUsdPerMillion, `${m.model} input`);
+      assert.equal(m.base_output_usd_per_million, price.outputPriceUsdPerMillion, `${m.model} output`);
+    }
+  });
+
+  it("SHOULD quote a single model at that same catalogue price whether or not it is an index member — Bug guarded: a membership-conditional source makes a model's price depend on index membership rather than on what the provider charges", { timeout: 20_000 }, async () => {
+    const [entries, snapshot] = await Promise.all([catalogEntries(), getCpi()]);
+    const attested = new Map(
+      ((snapshot as { models: Array<{ id: string; usdPricePerMillion: { input: number; output: number } }> }).models ?? [])
+        .map((m) => [m.id, m.usdPricePerMillion] as const),
+    );
+    const disagrees = (e: CatalogEntry) => {
+      const a = attested.get(e.modelKey);
+      return a !== undefined && a.input !== e.currentPrice.inputPriceUsdPerMillion;
+    };
+    const members = entries.filter((e) => e.indexMember);
+    const sample = [
+      ...[...members].sort((a, b) => Number(disagrees(b)) - Number(disagrees(a))).slice(0, 5),
+      ...entries.filter((e) => !e.indexMember).slice(0, 3),
+    ];
+    assert.ok(sample.length > 0, "catalogue must carry models to sample");
+
+    const quoted = await Promise.all(sample.map((e) => resolveModelPrice(e.modelKey)));
+    quoted.forEach((priced, i) => {
+      const entry = sample[i];
+      assert.ok(priced !== null, `${entry.modelKey} must resolve to a price`);
+      assert.equal(
+        priced.price.base_input_usd_per_million,
+        entry.currentPrice.inputPriceUsdPerMillion,
+        `${entry.modelKey} input`,
+      );
+      assert.equal(
+        priced.price.base_output_usd_per_million,
+        entry.currentPrice.outputPriceUsdPerMillion,
+        `${entry.modelKey} output`,
+      );
+    });
   });
 });
 
@@ -155,47 +239,79 @@ describe("smoke: routing fee contract", () => {
     assert.equal(await getRoutingFeeRate(), cpi.routingFeeRate);
   });
 
-  it("SHOULD produce the same cost FOR a basket member and a catalog-only model that share provider prices — Bug guarded: basket membership must not move the cost of a model", { timeout: 15_000 }, async () => {
-    const basket = await getBasketPrices();
-    const catalog = (await getCatalog()) as { models: Array<Record<string, any>> };
-    const offIndex = catalog.models.filter((m) => m.indexMember === false);
-    assert.ok(offIndex.length > 0, "catalog must carry at least one non-index model");
-
-    const twin = offIndex.find((c) =>
-      basket.some(
-        (b) =>
-          b.base_input_usd_per_million === c.currentPrice.inputPriceUsdPerMillion &&
-          b.base_output_usd_per_million === c.currentPrice.outputPriceUsdPerMillion,
-      ),
-    );
-    assert.ok(twin, "expected a catalog-only model sharing provider prices with a basket member");
-
-    const member = basket.find(
-      (b) =>
-        b.base_input_usd_per_million === twin.currentPrice.inputPriceUsdPerMillion &&
-        b.base_output_usd_per_million === twin.currentPrice.outputPriceUsdPerMillion,
-    )!;
-    const [pricedMember, pricedTwin, rate] = await Promise.all([
-      resolveModelPrice(member.model),
-      resolveModelPrice(twin.modelKey),
+  it("SHOULD publish the billed price the exchange actually charges, FOR index members and catalog-only models alike — Bug guarded: a quote sourced from anything but the live catalogue is a budget the bill will not honour", { timeout: 20_000 }, async () => {
+    const [indexModels, catalogPrices, entries, published, rate] = await Promise.all([
+      getIndexPrices(),
+      getCatalogPrices(),
+      catalogEntries(),
+      publishedBilledPrices(),
       getRoutingFeeRate(),
     ]);
-    assert.ok(pricedMember !== null && pricedTwin !== null);
-    assert.equal(pricedMember.source, "oracle-basket");
-    assert.equal(pricedTwin.source, "oracle-catalog");
-    assert.deepEqual(
-      usdCost(pricedMember.price, 1_000_000, 1_000_000, rate),
-      usdCost(pricedTwin.price, 1_000_000, 1_000_000, rate),
-    );
+    const isMember = new Map(entries.map((e) => [e.modelKey, e.indexMember]));
+    const quoted = [
+      ...indexModels,
+      ...catalogPrices.filter((m) => !isMember.get(m.model)),
+    ];
+    let members = 0;
+    let nonMembers = 0;
+    for (const m of quoted) {
+      const bill = published[m.model];
+      if (!bill) continue;
+      const billed = withBilledPrices(m, rate);
+      assertWithinTolerance(
+        billed.billed_input_usd_per_million,
+        bill.input.usdPerMillion,
+        `${m.model} billed input`,
+      );
+      assertWithinTolerance(
+        billed.billed_output_usd_per_million,
+        bill.output.usdPerMillion,
+        `${m.model} billed output`,
+      );
+      if (isMember.get(m.model)) members += 1;
+      else nonMembers += 1;
+    }
+    assert.ok(members > 0, "no index member was checked against the published bill");
+    assert.ok(nonMembers > 0, "no catalog-only model was checked against the published bill");
+  });
+
+  it("SHOULD bill a single quoted model at the published rate — Bug guarded: the single-model path serves a different endpoint from the index listing and can drift off the bill on its own", { timeout: 20_000 }, async () => {
+    const [entries, published, rate] = await Promise.all([
+      catalogEntries(),
+      publishedBilledPrices(),
+      getRoutingFeeRate(),
+    ]);
+    const sample = [
+      ...entries.filter((e) => e.indexMember).slice(0, 3),
+      ...entries.filter((e) => !e.indexMember).slice(0, 3),
+    ];
+    const quoted = await Promise.all(sample.map((e) => resolveModelPrice(e.modelKey)));
+    quoted.forEach((priced, i) => {
+      const key = sample[i].modelKey;
+      const bill = published[key];
+      assert.ok(priced !== null, `${key} must resolve to a price`);
+      assert.ok(bill, `${key} is tracked but /v1/oracle/pricing does not price it`);
+      const billed = withBilledPrices(priced.price, rate);
+      assertWithinTolerance(
+        billed.billed_input_usd_per_million,
+        bill.input.usdPerMillion,
+        `${key} billed input`,
+      );
+      assertWithinTolerance(
+        billed.billed_output_usd_per_million,
+        bill.output.usdPerMillion,
+        `${key} billed output`,
+      );
+    });
   });
 });
 
 describe("smoke: canonical model ids", () => {
-  it("SHOULD identify every basket, catalog and resolved model by its canonical vendor/model id — Bug guarded: a bare id reaching an agent is a name it cannot round-trip back to the oracle", { timeout: 15_000 }, async () => {
-    const basket = await getBasketPrices();
-    assert.ok(basket.length > 0, "basket must not be empty");
-    for (const m of basket) {
-      assert.ok(m.model.includes("/"), `basket model '${m.model}' is not vendor-prefixed`);
+  it("SHOULD identify every index, catalog and resolved model by its canonical vendor/model id — Bug guarded: a bare id reaching an agent is a name it cannot round-trip back to the oracle", { timeout: 15_000 }, async () => {
+    const indexModels = await getIndexPrices();
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    for (const m of indexModels) {
+      assert.ok(m.model.includes("/"), `index member '${m.model}' is not vendor-prefixed`);
     }
 
     const catalog = (await getCatalog()) as { models: Array<{ modelKey: string }> };
@@ -206,8 +322,8 @@ describe("smoke: canonical model ids", () => {
       );
     }
 
-    const resolved = await resolveModel(basket[0].model);
-    assert.ok(resolved !== null, `${basket[0].model} must resolve`);
+    const resolved = await resolveModel(indexModels[0].model);
+    assert.ok(resolved !== null, `${indexModels[0].model} must resolve`);
     assert.ok(
       resolved.resolved_key.includes("/"),
       `resolvedKey '${resolved.resolved_key}' is not vendor-prefixed`,
@@ -252,15 +368,14 @@ describe("smoke: data_get_breakdown", () => {
 });
 
 describe("smoke: data_get_cpi", () => {
-  it("returns basket with models array containing priced models", { timeout: 10_000 }, async () => {
+  it("returns the attested index with a models array containing priced models", { timeout: 10_000 }, async () => {
     const data = await getCpi() as Record<string, unknown>;
-    const fm = getFieldMap().basket;
-    const models = data[fm.models_array];
-    assert.ok(Array.isArray(models), `expected array at key '${fm.models_array}'`);
-    assert.ok(models.length > 0, "CPI basket must have models");
+    const models = data.models;
+    assert.ok(Array.isArray(models), "expected an array at key 'models'");
+    assert.ok(models.length > 0, "the attested index must have models");
 
     const first = models[0] as Record<string, unknown>;
-    assert.ok(first[fm.model_id], `model must have '${fm.model_id}' field`);
+    assert.ok(first.id, "model must have an 'id' field");
   });
 });
 
@@ -293,10 +408,10 @@ describe("smoke: data_get_methodology", () => {
 });
 
 describe("smoke: compute_estimate", () => {
-  it("returns positive USD cost for a basket-member model", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
-    assert.ok(basket.length > 0, "basket must be non-empty");
-    const price = basket[0];
+  it("returns positive USD cost for an index-member model", { timeout: 10_000 }, async () => {
+    const indexModels = await getIndexPrices();
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    const price = indexModels[0];
 
     const inputTokens = 1_000_000;
     const outputTokens = 100_000;
@@ -308,12 +423,12 @@ describe("smoke: compute_estimate", () => {
 });
 
 describe("smoke: compute_compare", () => {
-  it("returns all basket models ranked by cost, cheapest first", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
+  it("returns all index members ranked by cost, cheapest first", { timeout: 10_000 }, async () => {
+    const indexModels = await getIndexPrices();
     const inputTokens = 1_000_000;
     const outputTokens = 100_000;
 
-    const ranked = basket
+    const ranked = indexModels
       .map((p) => ({
         model: p.model,
         provider: p.provider,
@@ -369,9 +484,9 @@ describe("smoke: data_get_history", () => {
 
 describe("smoke: data_get_model_price_history", () => {
   it("returns input/output USD prices for an index-eligible model with the family slot echoed", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
-    assert.ok(basket.length > 0, "basket must be non-empty");
-    const sample = basket[0];
+    const indexModels = await getIndexPrices();
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    const sample = indexModels[0];
     const data = (await getModelPriceHistory(sample.model)) as Record<string, unknown>;
     assert.equal(data.modelKey, sample.model);
     assert.equal(typeof data.family, "string");
@@ -481,14 +596,7 @@ describe("smoke: context price ladder", () => {
     assert.ok(priced !== null, `${modelKey} must resolve to a price`);
     const threshold = context.tiers[0].fromInputTokens;
     const quote = (inputTokens: number) =>
-      quoteAtContextTier(
-        priced.price,
-        priced.base_price_provenance,
-        context,
-        rate,
-        inputTokens,
-        0,
-      );
+      quoteAtContextTier(priced.price, context, rate, inputTokens, 0);
 
     const flat = quote(threshold - 1).applied_context_tier;
     const higher = quote(threshold).applied_context_tier;
@@ -501,16 +609,15 @@ describe("smoke: context price ladder", () => {
     );
   });
 
-  it("SHOULD list every basket model in the catalogue AND start its ladder at its own flat rate — Bug guarded: a flat model must still ship one rung so no caller branches on whether a model happens to be tiered, and a basket member the catalogue omits is drift the compute tools refuse to quote through", { timeout: 15_000 }, async () => {
-    const [contexts, basket, rate] = await Promise.all([
+  it("SHOULD start every tracked model's ladder at its own flat rate — Bug guarded: a flat model must still ship one rung so no caller branches on whether a model happens to be tiered, and a rung that restates a different rate than the model's own is a second price for one model", { timeout: 15_000 }, async () => {
+    const [contexts, prices, rate] = await Promise.all([
       getCatalogContexts(),
-      getBasketPrices(),
+      getCatalogPrices(),
       getRoutingFeeRate(),
     ]);
-    for (const m of basket) {
+    for (const m of prices) {
       const { context_tiers } = modelContext(
         m,
-        null,
         requireContextFor(contexts, m.model),
         rate,
       );
@@ -543,9 +650,9 @@ describe("smoke: context price ladder", () => {
 
 describe("smoke: data_get_model_price_at", () => {
   it("returns a discriminated source response for an index-eligible model at a past timestamp", { timeout: 10_000 }, async () => {
-    const basket = await getBasketPrices();
-    assert.ok(basket.length > 0, "basket must be non-empty");
-    const sample = basket[0];
+    const indexModels = await getIndexPrices();
+    assert.ok(indexModels.length > 0, "the index must not be empty");
+    const sample = indexModels[0];
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const data = (await getModelPriceAt(sample.model, yesterday)) as Record<string, unknown>;
     assert.equal(data.modelKey, sample.model);
