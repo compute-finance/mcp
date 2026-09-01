@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/compute-finance/mcp/compare/v0.9.0...v0.10.0) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* quote every model at the price it will be billed ([#60](https://github.com/compute-finance/mcp/issues/60))
+
+### Bug Fixes
+
+* quote every model at the price it will be billed ([#60](https://github.com/compute-finance/mcp/issues/60)) ([2f41794](https://github.com/compute-finance/mcp/commit/2f4179439fb1d23c9ef3deda715c2a87a4b07cb0))
+
 ## [0.9.0](https://github.com/compute-finance/mcp/compare/v0.8.1...v0.9.0) (2026-08-26)
 
 
