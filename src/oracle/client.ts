@@ -59,7 +59,8 @@ function cachedJson(
   if (inflight) return inflight;
   const request = fetchJson(path)
     .then((data) => {
-      jsonCache.set(path, { data, expiresAt: Date.now() + ttlMsOf(data) });
+      const ttlMs = ttlMsOf(data);
+      if (ttlMs > 0) jsonCache.set(path, { data, expiresAt: Date.now() + ttlMs });
       return data;
     })
     .finally(() => {
@@ -171,7 +172,15 @@ export async function getCatalog(): Promise<unknown> {
 
 function publishedTtlMs(data: unknown): number {
   const ttlSeconds = (data as { ttlSeconds?: unknown } | null)?.ttlSeconds;
-  return typeof ttlSeconds === "number" && ttlSeconds > 0 ? ttlSeconds * 1000 : 0;
+  const ms = typeof ttlSeconds === "number" ? ttlSeconds * 1000 : Number.NaN;
+  if (!Number.isFinite(ms) || ms <= 0) {
+    warnDriftOnce(
+      "availability:ttl",
+      `availability ttlSeconds is ${String(ttlSeconds)} — upstream schema drift, serving uncached`,
+    );
+    return 0;
+  }
+  return ms;
 }
 
 export async function getModelAvailability(): Promise<unknown> {

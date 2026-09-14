@@ -63,9 +63,9 @@ describe("getModelAvailability", () => {
     assert.equal(calls.length, 2);
   });
 
-  it("SHOULD NOT cache a map that publishes no usable freshness — Bug guarded: a snapshot the exchange never dated must not be handed out as current", async (t) => {
+  it("SHOULD NOT cache a snapshot that publishes no usable freshness — Bug guarded: a snapshot the exchange never dated must not be handed out as current", async (t) => {
     t.mock.timers.enable({ apis: ["Date"] });
-    for (const ttlSeconds of [undefined, 0, -1, "10"]) {
+    for (const ttlSeconds of [undefined, 0, -1, "10", Number.MAX_VALUE]) {
       _resetOracleCache();
       calls = [];
       serve({ ...AVAILABILITY, ttlSeconds });
@@ -73,6 +73,20 @@ describe("getModelAvailability", () => {
       await getModelAvailability();
       assert.equal(calls.length, 2, `ttlSeconds: ${String(ttlSeconds)}`);
     }
+  });
+
+  it("SHOULD NOT cache a freshness that parses to Infinity — Bug guarded: an unbounded expiry pins one liveness snapshot for the life of the process", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(input.toString());
+      return new Response('{"computedAt":"2026-09-14T14:48:09.489Z","ttlSeconds":1e400,"models":[],"auto":null}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+    await getModelAvailability();
+    await getModelAvailability();
+    assert.equal(calls.length, 2);
   });
 
   it("SHOULD leave a read that publishes no freshness of its own on the client's window — Bug guarded: the availability TTL must not shorten every other cached oracle read into a request per call", async (t) => {
