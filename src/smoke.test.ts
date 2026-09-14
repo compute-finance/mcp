@@ -12,6 +12,7 @@ import {
   getHistory,
   getModelPriceHistory,
   getCatalog,
+  getModelAvailability,
   getModelPriceAt,
   getBaseline,
   getScuAt,
@@ -527,6 +528,50 @@ describe("smoke: data_get_catalog", () => {
     assert.equal(typeof cp.inputPriceUsdPerMillion, "number");
     assert.equal(typeof cp.outputPriceUsdPerMillion, "number");
     assert.equal(typeof cp.observedAt, "string");
+  });
+});
+
+describe("smoke: data_get_model_availability", () => {
+  it("returns a dated, freshness-bounded routability map keyed by canonical model id", { timeout: 10_000 }, async () => {
+    const data = (await getModelAvailability()) as Record<string, unknown>;
+    assert.equal(typeof data.computedAt, "string");
+    assert.ok(
+      !Number.isNaN(Date.parse(data.computedAt as string)),
+      `computedAt '${data.computedAt}' must be a timestamp`,
+    );
+    assert.equal(typeof data.ttlSeconds, "number");
+    assert.ok(
+      (data.ttlSeconds as number) > 0,
+      "the exchange must state how long the answer stays fresh",
+    );
+
+    const models = data.models as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(models), "models must be an array");
+    assert.ok(models.length > 0, "the public pool must list models");
+    for (const m of models) {
+      assert.equal(typeof m.id, "string");
+      assert.ok((m.id as string).includes("/"), `availability id '${m.id}' is not vendor-prefixed`);
+      assert.equal(typeof m.routable, "boolean", `${m.id}: routable must be a boolean`);
+    }
+
+    const auto = data.auto as Record<string, unknown> | null;
+    assert.ok(auto, "auto must be reported alongside the models");
+    assert.ok(
+      models.some((m) => m.id === auto.id),
+      `auto points at '${auto.id}', which the map does not list`,
+    );
+  });
+
+  it("SHOULD flag every catalogue model — Bug guarded: a model priced by the oracle but absent from the map is one an agent cannot rule out before it sends", { timeout: 15_000 }, async () => {
+    const [availability, catalog] = await Promise.all([
+      getModelAvailability() as Promise<{ models: Array<{ id: string }> }>,
+      getCatalog() as Promise<{ models: Array<{ modelKey: string }> }>,
+    ]);
+    const flagged = new Set(availability.models.map((m) => m.id));
+    const unflagged = catalog.models
+      .map((m) => m.modelKey)
+      .filter((key) => !flagged.has(key));
+    assert.deepEqual(unflagged, []);
   });
 });
 

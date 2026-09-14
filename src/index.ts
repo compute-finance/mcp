@@ -29,6 +29,7 @@ import {
   getHistory as getOracleHistory,
   getModelPriceHistory,
   getCatalog,
+  getModelAvailability,
   getModelPriceAt,
   getBaseline,
   getScuAt,
@@ -204,6 +205,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (typeof date !== "string") return errorText(date.error);
         return textWithContext(await getScuAt(date));
       }
+      case "data_get_model_availability":
+        return textWithContext(await getModelAvailability());
 
       case "compute_estimate": {
         const model = requireString(a.model, "model");

@@ -332,6 +332,38 @@ describe("toolDefinitions", () => {
     assert.equal(tool.annotations?.idempotentHint, true);
   });
 
+  it("SHOULD include data_get_model_availability as an ORACLE-annotated read tool", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_availability");
+    assert.ok(tool, "data_get_model_availability missing");
+    assert.equal(tool.annotations?.readOnlyHint, true);
+    assert.equal(tool.annotations?.destructiveHint, false);
+    assert.equal(tool.annotations?.idempotentHint, true);
+  });
+
+  it("SHOULD take no arguments ON data_get_model_availability — Bug guarded: the public pool is the only scope an anonymous caller may ask for, so any parameter naming one is a surface that cannot be served", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_availability");
+    assert.ok(tool);
+    assert.deepEqual(tool.inputSchema.properties, {});
+    assert.equal(tool.inputSchema.required, undefined);
+  });
+
+  it("SHOULD teach WHEN to call data_get_model_availability AND that its answer is advisory — Bug guarded: an agent reading routability as a guarantee stops handling the failed send it was meant to avoid", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_availability");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("before choosing a model"));
+    assert.ok(tool.description.includes("advisory"));
+    assert.ok(tool.description.includes("can still fail the send"));
+  });
+
+  it("SHOULD name every field data_get_model_availability returns, with its freshness — Bug guarded: routability without computedAt and ttlSeconds is a claim an agent cannot date", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_availability");
+    assert.ok(tool);
+    for (const field of ["computedAt", "ttlSeconds", "routable", "auto"]) {
+      assert.ok(tool.description.includes(field), `omits ${field}`);
+    }
+    assert.ok(tool.description.includes("canonical vendor-prefixed id"));
+  });
+
   it("SHOULD describe data_get_scu_at with the step-function and tie-break semantics — Bug guarded: agents must not interpolate or pick the wrong revision on equal publishedAt", () => {
     const tool = toolDefinitions.find((t) => t.name === "data_get_scu_at");
     assert.ok(tool);
