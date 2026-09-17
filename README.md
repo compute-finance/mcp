@@ -18,10 +18,12 @@ npx @compute-finance/mcp setup
 
 This single command:
 1. Registers the MCP server at user scope (`claude mcp add`)
-2. Installs Claude Code skills (`/cf-session-management`, `/cf-session-consumption`, `/cf-active-sessions`)
+2. Installs Claude Code skills (`/cf-session-management`, `/cf-session-consumption`, `/cf-active-sessions`, `/cf-account`)
 3. Installs the **cost hook** — a `UserPromptSubmit` hook that injects session cost into Claude's context so every response can show how much you've spent
 
 Restart Claude Code after setup.
+
+To also answer for your own Compute Finance account, connect it once — see [Your account](#your-account).
 
 Or register manually without skills/hook:
 
@@ -56,6 +58,8 @@ npx . setup
 ## Tools
 
 22 tools across five layers — no API key required. All tools are read-only.
+
+Connecting an account registers a sixth group, `account_*`, on top of these. Those tools are not listed below: the exchange publishes them, and this package copies none of them. See [Your account](#your-account).
 
 ### Data (live oracle)
 
@@ -128,6 +132,53 @@ The `analyze_session` counterfactual quotes each model's base rate and never a l
 |------|-------------|
 | `telemetry_get_history` | Aggregate stats across logged sessions — cumulative cost, per-profile medians, insights |
 
+## Your account
+
+Everything above is public data or local files. To ask what **your** Compute Finance account has spent, which of your keys are live, or how much headroom is left before a cap, connect the account with an **app grant**.
+
+### Connect
+
+1. In [compute.finance](https://compute.finance) open **Settings → Connected apps**, press **Grant access**, name the app and choose what it may do: **Read** (see the account's balance, usage and history) and/or **Act** (manage the account's keys and limits). If you work in an organization, pick the account the grant acts on — the grant is pinned to it and no session elsewhere can redirect it.
+2. Copy the `cfa_live_…` token. It is shown **once**.
+3. Store it:
+
+```bash
+npx @compute-finance/mcp setup --account
+```
+
+Setup asks for the token on stdin — typing is hidden, and the token is never an argument, so it cannot land in your shell history or in an MCP config file. It is then stored in the credential store your OS already ships: **macOS Keychain** (`security`), **Windows DPAPI** (a blob under `%APPDATA%` only your Windows user can decrypt), or the **Secret Service** on Linux (`secret-tool`, from libsecret). No native npm dependency is added for any of them.
+
+Restart your MCP client. The `account_*` tools appear; with no credential they are simply not registered and the oracle and session tools behave exactly as before.
+
+### Where the server looks for the token
+
+At startup, in this order, stopping at the first that answers:
+
+| Source | Use |
+|--------|-----|
+| `CF_APP_GRANT_COMMAND` | A shell command that prints the token on stdout — `op read op://Private/compute-finance/token`, `pass show compute-finance`, `bw get password …`. Works with any secret manager on any OS. Nothing is stored by this package. |
+| OS credential store | What `setup --account` wrote. |
+| `CF_APP_GRANT` | The environment. Intended for CI, where no interactive store exists. |
+
+Wherever it came from, the token is only ever sent to an `https` origin — or to `http` on a loopback host, so a local API still works. `CF_API_BASE` pointing anywhere else is refused at startup and the token is not sent.
+
+### What a grant can and cannot do
+
+- A grant is limited to the operations you ticked when you created it, on the one account you pinned it to. **It can never move funds** — no withdrawal, no transfer, and no action that needs a wallet signature. Those stay with your wallet.
+- **Act access is not harmless.** An app holding it can create an API key that spends the account's balance, change or clear the budget caps that bound that spending, and configure automatic top-up, which charges your saved card. Tick it only for an app you would trust with those three; grant Read alone otherwise.
+- The exchange decides what each grant may call. `GET /v1/account-tools` returns only the tools that grant holds the access for, with their descriptions and input schemas; a call goes through `POST /v1/account-tools/call`. This package copies none of those contracts, so a change on the exchange's side reaches you without a release here.
+- A refusal is a refusal. When the exchange declines — the grant is frozen, revoked, or lacks the access a tool needs — the tool returns the exchange's own wording naming what is missing. It is never rewritten into an empty balance, an empty key list or a guess. A grant refused at startup registers a single `account_status` tool carrying that wording, rather than reporting no account at all.
+
+### Revoke
+
+Revoking is done where the grant was made: **Settings → Connected apps → Revoke**. Revocation is permanent and takes effect at once; your own session and every other app are unaffected. **Freeze** suspends a grant instead, and can be lifted.
+
+Remove the local copy of the token afterwards:
+
+```bash
+npx @compute-finance/mcp setup --forget-account
+```
+
 ## Cost hook
 
 The `setup` command installs a `UserPromptSubmit` hook into `~/.claude/settings.json`. Every time you send a message, the hook reads the current session transcript, prices it against the live oracle, and injects a cost summary into Claude's context via `additionalContext`. Claude then appends a `💰 Compute.Finance · …` line at the end of its response.
@@ -167,7 +218,9 @@ Remove the `UserPromptSubmit` entry from `~/.claude/settings.json`.
 
 ## Privacy
 
-All data stays on your machine. The only network calls are unauthenticated GETs to `api.compute.finance` — the oracle endpoints under `/v1/oracle/*` and the OpenAPI document at `/openapi.json`, read once at startup to document oracle response shapes. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl`) are never uploaded.
+All data stays on your machine. Without a connected account the only network calls are unauthenticated GETs to `api.compute.finance` — the oracle endpoints under `/v1/oracle/*` and the OpenAPI document at `/openapi.json`, read once at startup to document oracle response shapes. Session logs (`~/.compute-finance/sessions.jsonl`, `~/.compute-finance/inferences.jsonl`) are never uploaded.
+
+With an account connected, the grant token is sent to `api.compute.finance` as an `Authorization: Bearer` header on `/v1/account-tools` and `/v1/account-tools/call`, and nowhere else. It is never written to a config file, never passed as a process argument, and never printed to stdout, stderr or a tool answer — including in diagnostics, which are redacted before they are written. Session logs still carry only local measurements and are still never uploaded.
 
 ## Links
 
