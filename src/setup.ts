@@ -4,7 +4,9 @@
  * Dynamically imported from index.ts when `process.argv[2] === "setup"`.
  * Copies skill definitions to ~/.claude/skills/, registers the MCP
  * server with the Claude CLI, and installs the cost hook
- * (UserPromptSubmit) into ~/.claude/settings.json.
+ * (UserPromptSubmit) into ~/.claude/settings.json. With `--account`,
+ * reads an app grant token on stdin and stores it in the OS credential
+ * store instead; `--forget-account` removes it again.
  *
  * Zero extra dependencies — only node: builtins.
  */
@@ -19,6 +21,10 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { AccountApiError, UnsafeCredentialOrigin, listAccountTools } from "./account/client.js";
+import { firstLine } from "./account/credential.js";
+import { secretStoreFor } from "./account/os-store.js";
+import { redactedMessage } from "./account/redact.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +34,7 @@ const SKILL_NAMES = [
   "cf-session-management",
   "cf-session-consumption",
   "cf-active-sessions",
+  "cf-account",
 ] as const;
 
 const PKG_NAME = "@compute-finance/mcp";
@@ -41,6 +48,8 @@ const CLAUDE_DIR = join(homedir(), ".claude", "skills");
 const args = process.argv.slice(2); // strip "node" + script
 const skillsOnly = args.includes("--skills-only");
 const mcpOnly = args.includes("--mcp-only");
+const connectAccountOnly = args.includes("--account");
+const forgetAccountOnly = args.includes("--forget-account");
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -61,12 +70,124 @@ function hasCli(): boolean {
   }
 }
 
+// ── Account grant ────────────────────────────────────────────────────
+
+async function readHiddenLine(): Promise<string> {
+  const stdin = process.stdin;
+  const interactive = stdin.isTTY === true;
+  if (interactive) stdin.setRawMode(true);
+  stdin.resume();
+  stdin.setEncoding("utf8");
+
+  const END_OF_TRANSMISSION = "\u0004";
+  const INTERRUPT = "\u0003";
+  const BACKSPACE = /[\u0008\u007f]/;
+
+  let typed = "";
+  try {
+    for await (const chunk of stdin) {
+      for (const ch of chunk as string) {
+        if (ch === "\r" || ch === "\n" || ch === END_OF_TRANSMISSION) return typed;
+        if (ch === INTERRUPT) return "";
+        if (BACKSPACE.test(ch)) typed = typed.slice(0, -1);
+        else typed += ch;
+      }
+    }
+    return typed;
+  } finally {
+    if (interactive) stdin.setRawMode(false);
+  }
+}
+
+function refuseToStore(reason: string): never {
+  console.log(red(`  ✗ ${reason}`));
+  console.log();
+  console.log("  Nothing was written. Point the server at your own secret manager instead:");
+  console.log(dim('    export CF_APP_GRANT_COMMAND="op read op://Private/compute-finance/token"'));
+  console.log(
+    dim("    Any command that prints the token on stdout works — 1Password, pass, Bitwarden."),
+  );
+  console.log();
+  process.exit(1);
+}
+
+async function connectAccount(): Promise<void> {
+  const store = secretStoreFor();
+  if (!store) refuseToStore(`No OS credential store is available on ${process.platform}.`);
+
+  console.log("  Create a grant in Settings → Connected apps, then paste its token below.");
+  console.log(dim("  Typing is hidden; the token never lands in a config file or shell history."));
+  console.log();
+  process.stdout.write("  Token: ");
+  const token = firstLine(await readHiddenLine());
+  console.log();
+  console.log();
+
+  if (!token) {
+    console.log(yellow("  ⚠ No token entered — nothing was stored."));
+    console.log();
+    return;
+  }
+
+  try {
+    const document = await listAccountTools(token);
+    const count = document.tools.length;
+    console.log(
+      green("  ✓ Grant accepted"),
+      dim(`(${document.appName || "unnamed app"}, ${count} account tool${count === 1 ? "" : "s"})`),
+    );
+  } catch (err) {
+    if (err instanceof AccountApiError) {
+      console.log(red("  ✗ The exchange refused this grant:"));
+      console.log(dim(`    ${redactedMessage(err)}`));
+      console.log(dim("    Nothing was stored."));
+      console.log();
+      process.exit(1);
+    }
+    if (err instanceof UnsafeCredentialOrigin) refuseToStore(redactedMessage(err));
+    console.log(yellow("  ⚠ Could not reach the API to check the token — storing it anyway."));
+    console.log(dim(`    ${redactedMessage(err)}`));
+  }
+
+  try {
+    await store.write(token);
+  } catch {
+    refuseToStore(`${store.describe} refused the token — it needs ${store.requires}.`);
+  }
+
+  console.log(green("  ✓ Token stored in"), dim(store.describe));
+  console.log(dim("  Restart Claude Code to pick up the account_* tools."));
+  console.log();
+}
+
+async function forgetAccount(): Promise<void> {
+  const store = secretStoreFor();
+  if (!store) {
+    console.log(yellow(`  ⚠ No OS credential store on ${process.platform} — nothing to remove.`));
+  } else {
+    await store.clear();
+    console.log(green("  ✓ Removed the stored token from"), dim(store.describe));
+  }
+  console.log(dim("  Revoking the grant itself is done in Settings → Connected apps."));
+  console.log();
+}
+
 // ── Main ─────────────────────────────────────────────────────────────
 
 console.log();
 console.log(bold("  Compute Finance MCP Setup"));
 console.log(dim("  ────────────────────────────────────"));
 console.log();
+
+if (forgetAccountOnly) {
+  await forgetAccount();
+  process.exit(0);
+}
+
+if (connectAccountOnly) {
+  await connectAccount();
+  process.exit(0);
+}
 
 const installed: string[] = [];
 let mcpRegistered = false;
@@ -115,7 +236,7 @@ if (!skillsOnly) {
       mcpRegistered = true;
     } catch (err) {
       console.log(yellow("  ⚠ Automatic MCP registration failed."));
-      console.log(dim(`    Error: ${(err as Error).message}`));
+      console.log(dim(`    Error: ${redactedMessage(err)}`));
       console.log();
       console.log("  Register manually:");
       console.log(
@@ -201,7 +322,7 @@ if (!mcpOnly) {
     }
   } catch (err) {
     console.log(yellow("  ⚠ Cost hook installation failed."));
-    console.log(dim(`    Error: ${(err as Error).message}`));
+    console.log(dim(`    Error: ${redactedMessage(err)}`));
     console.log();
     console.log("  Add manually to ~/.claude/settings.json:");
     console.log(
