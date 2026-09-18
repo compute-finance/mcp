@@ -21,6 +21,7 @@ const HANDLER_ARGS: Record<string, { required?: string[]; optional?: string[] }>
   data_get_model_price_at: { required: ["model", "date"] },
   data_get_baseline: {},
   data_get_scu_at: { required: ["date"] },
+  data_get_model_availability: {},
   compute_estimate: { required: ["model", "input_tokens", "output_tokens"] },
   compute_compare: { required: ["input_tokens", "output_tokens"] },
   render_session_report: { optional: ["session_id", "cwd"] },

@@ -23,7 +23,13 @@ interface CacheEntry<T> {
 }
 
 const CACHE_TTL_MS = 60_000;
-const jsonCache = new Map<string, CacheEntry<unknown>>();
+
+interface ExpiringEntry {
+  data: unknown;
+  expiresAt: number;
+}
+
+const jsonCache = new Map<string, ExpiringEntry>();
 const jsonInflight = new Map<string, Promise<unknown>>();
 const driftWarned = new Set<string>();
 
@@ -41,16 +47,20 @@ async function fetchJson(path: string): Promise<unknown> {
   return res.json();
 }
 
-function cachedJson(path: string): Promise<unknown> {
+function cachedJson(
+  path: string,
+  ttlMsOf: (data: unknown) => number = () => CACHE_TTL_MS,
+): Promise<unknown> {
   const cached = jsonCache.get(path);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+  if (cached && Date.now() < cached.expiresAt) {
     return Promise.resolve(cached.data);
   }
   const inflight = jsonInflight.get(path);
   if (inflight) return inflight;
   const request = fetchJson(path)
     .then((data) => {
-      jsonCache.set(path, { data, fetchedAt: Date.now() });
+      const ttlMs = ttlMsOf(data);
+      if (ttlMs > 0) jsonCache.set(path, { data, expiresAt: Date.now() + ttlMs });
       return data;
     })
     .finally(() => {
@@ -158,6 +168,23 @@ export async function getModelPriceHistory(
 
 export async function getCatalog(): Promise<unknown> {
   return cachedJson("/v1/oracle/catalog");
+}
+
+function publishedTtlMs(data: unknown): number {
+  const ttlSeconds = (data as { ttlSeconds?: unknown } | null)?.ttlSeconds;
+  const ms = typeof ttlSeconds === "number" ? ttlSeconds * 1000 : Number.NaN;
+  if (!Number.isFinite(ms) || ms <= 0) {
+    warnDriftOnce(
+      "availability:ttl",
+      `availability ttlSeconds is ${String(ttlSeconds)} — upstream schema drift, serving uncached`,
+    );
+    return 0;
+  }
+  return ms;
+}
+
+export async function getModelAvailability(): Promise<unknown> {
+  return cachedJson("/v1/models/availability", publishedTtlMs);
 }
 
 export async function getModelPriceAt(

@@ -274,6 +274,16 @@ export const toolDefinitions: ToolDef[] = [
   },
 
   {
+    name: "data_get_model_availability",
+    description:
+      "Which models can serve a request right now — call it before choosing a model, so a model that cannot serve is ruled out before the request instead of after a 503. Source: Compute Finance API (/v1/models/availability). Carries `computedAt` (when the exchange computed this answer), `ttlSeconds` (how long it considers the answer fresh), `models` — an array of every catalogue model as `id`, the canonical vendor-prefixed id ('anthropic/claude-opus-4.8', 'openai/gpt-5.5'), plus a `routable` boolean — and `auto`, carrying the `id` the `auto` alias points at in this snapshot. " +
+      "The signal is advisory: it is true as of `computedAt` and only for `ttlSeconds` after it, capacity moves on its own, and a model reported routable can still fail the send — handle the error on the request itself rather than reading this answer as a guarantee. " +
+      "The answer is the exchange's own, served verbatim with no liveness computed here, so it cannot disagree with what the router does. It covers the public pool and takes no arguments. Says nothing about price: use data_get_catalog or data_get_basket for what the routable models cost and compute_estimate for the cost of the one you settle on.",
+    inputSchema: NO_ARGS,
+    annotations: ORACLE,
+  },
+
+  {
     name: "compute_estimate",
     description:
       "Nominal USD cost for any oracle-tracked model given input/output token counts — index members and catalog-only models on identical terms. Cache reads and cache writes belong inside input_tokens and are charged at the full input rate here; no cache discount is applied. Returns `base_usd_cost` (provider list price), `routing_fee_usd` and `billed_usd_cost` (what compute.finance charges), plus the `routing_fee_rate` they derive from. Compare models on base_usd_cost; budget on billed_usd_cost. " +

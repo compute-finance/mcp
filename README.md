@@ -55,7 +55,7 @@ npx . setup
 
 ## Tools
 
-21 tools across five layers — no API key required. All tools are read-only.
+22 tools across five layers — no API key required. All tools are read-only.
 
 ### Data (live oracle)
 
@@ -74,6 +74,7 @@ npx . setup
 | `data_get_model_price_at` | Per-model input/output USD price effective at a timestamp — `manifest` source when the model represented its family in the revision active then, `catalog` otherwise |
 | `data_get_baseline` | Frozen SCU denominator behind `computeIndex` — the SCU of the first confirmed revision, set once and never recomputed |
 | `data_get_scu_at` | SCU value active at a timestamp via step function — no interpolation, `null` before the genesis revision |
+| `data_get_model_availability` | Which models can serve right now — every catalogue model with a `routable` flag, the model `auto` points at, and the `computedAt` / `ttlSeconds` the answer is good for |
 
 Models are identified by their canonical vendor-prefixed id — `anthropic/claude-opus-4.8`, `openai/gpt-5.5`, `qwen/qwen-3.5-flash`. Every tool taking a model also accepts the bare name (`gpt-5.5`) and answers with the canonical id. The vendor slug is not always the provider key (`alibaba` → `qwen`, `xai` → `x-ai`, `moonshot` → `moonshotai`), so reuse an id the API returned rather than assembling one. `data_get_scu`, `data_get_breakdown` and `data_get_reconstitutions` are the exception: they pass the attested manifest through verbatim and so report bare model keys, because a `/` is not a legal manifest key.
 
@@ -92,6 +93,8 @@ The ladder comes from the catalog endpoint, and the two kinds of tool part ways 
 `max_input_tokens` is the largest input a model accepts, `null` when the model declares no window of its own — not unbounded: the request-body ceiling still applies, there is just no per-model limit. Above a declared window the oracle refuses the request outright, so `compute_estimate` and `compute_compare` set `exceeds_max_input_tokens`. They still quote the cost: these tools are read-only and an agent sizing a context needs the number before it reshapes the request, but the flag says plainly that the request as supplied would be rejected.
 
 Prices also carry a `provenance` mark saying how far the number has been checked: `verified` — an operator recorded a vendor source for it; `inferred` — derived from a sibling number or a vendor default, with no source recorded; `promotional` — a discounted list price that is expected to end. **Every value bills as shown; the mark says how much to trust it, not what it costs.** Marks are set by hand and hold as of the operator's last pass, not as a live check against the vendor. Every cache and reasoning component carries its own mark wherever it appears, and so does every base price: `data_get_catalog` marks `currentPrice.provenance` for every model, index member or not, while `data_get_basket`, `data_get_price` and `compute_estimate` carry the same pair as `base_price_provenance`. A rung follows the same rule: the first repeats the base price's mark, and a higher rung is always a catalogue number, marked in both directions with the single mark the vendor quotes it under. Session and consumption reports print each cache multiplier with its mark; when the oracle publishes no cache pricing for a model they say so and print no marks.
+
+A price says what a model costs, never whether it can serve. `data_get_model_availability` answers that second question: the public pool's routability list — every catalogue model under its canonical id with a `routable` flag, plus the model `auto` points at. Call it before settling on a model, so one that cannot serve is ruled out before the request instead of by a 503 after it. **The signal is advisory**: true as of `computedAt` and only for `ttlSeconds` after it, capacity moves on its own, and a model reported routable can still fail the send — the caller still handles the error on the request itself. The answer is the exchange's own, served verbatim with no liveness computed here, so it cannot disagree with the router that has to honour it; it is cached for exactly the `ttlSeconds` published with it, and not at all when that figure is missing or unusable, rather than for the window every other read uses.
 
 ### Compute
 
