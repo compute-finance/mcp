@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/compute-finance/mcp/compare/v0.10.0...v0.11.0) (2026-09-18)
+
+
+### Features
+
+* say which models can serve before a request is sent ([#62](https://github.com/compute-finance/mcp/issues/62)) ([1a3e847](https://github.com/compute-finance/mcp/commit/1a3e8470dcc702c1c62f75ea030ae2ed07cb6959))
+
 ## [0.10.0](https://github.com/compute-finance/mcp/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 
