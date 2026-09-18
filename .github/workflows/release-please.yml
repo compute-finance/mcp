@@ -3,6 +3,11 @@ name: release-please
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v0.11.0"
+        required: true
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -10,6 +15,7 @@ concurrency:
 
 jobs:
   release-please:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -30,7 +36,7 @@ jobs:
 
   publish:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -47,9 +53,31 @@ jobs:
 
       - run: npm ci
 
-      - run: npm publish --access public --provenance
+      - id: npm-package
+        run: |
+          echo "url=https://registry.npmjs.org/$(node -p 'const p = require("./server.json").packages[0]; `${p.identifier}/${p.version}`')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_VERSION_URL: ${{ steps.npm-package.outputs.url }}
+        run: |
+          if curl -fsS -o /dev/null "$NPM_VERSION_URL"; then
+            echo "Already on npm, nothing to publish."
+          else
+            npm publish --access public --provenance
+          fi
+
+      - name: Wait until npm serves the version
+        env:
+          NPM_VERSION_URL: ${{ steps.npm-package.outputs.url }}
+        run: |
+          for _ in $(seq 1 40); do
+            curl -fsS -o /dev/null "$NPM_VERSION_URL" && exit 0
+            sleep 15
+          done
+          echo "::error::$NPM_VERSION_URL still 404 after 10 minutes; the MCP Registry would reject the publish."
+          exit 1
 
       - name: Publish to MCP Registry
         run: |
