@@ -64,6 +64,12 @@ import {
 } from "./tools/validation.js";
 import { text, errorText, textWithContext, isErrorResult } from "./tools/response.js";
 import { rawAnalyzeSession, rawAnalyzeInferences, getHistory } from "./tools/analyze.js";
+import {
+  ACCOUNT_NOT_CONNECTED,
+  isAccountToolName,
+  loadAccountGroup,
+} from "./account/group.js";
+import { redactedMessage } from "./account/redact.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -94,10 +100,15 @@ function parseHistoryQueryArgs(a: Record<string, unknown>): HistoryQueryArgs | {
   return { from, to, granularity, limit };
 }
 
-const startupPromise = warmOpenApiCache().then(() =>
-  Promise.all([buildTools(), initFieldMap()]),
-);
-const toolsPromise: Promise<ToolDef[]> = startupPromise.then(([tools]) => tools);
+const accountPromise = loadAccountGroup();
+const startupPromise = Promise.all([
+  warmOpenApiCache().then(() => Promise.all([buildTools(), initFieldMap()])),
+  accountPromise,
+]);
+const toolsPromise: Promise<ToolDef[]> = startupPromise.then(([[tools], account]) => [
+  ...tools,
+  ...(account?.tools ?? []),
+]);
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: await toolsPromise,
@@ -109,6 +120,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const a = (args ?? {}) as Record<string, unknown>;
 
   try {
+    if (isAccountToolName(name)) {
+      const account = await accountPromise;
+      if (!account) return errorText(ACCOUNT_NOT_CONNECTED);
+      return text(await account.call(name, a));
+    }
+
     switch (name) {
       case "data_get_basket": {
         const [models, rate, contexts] = await Promise.all([
@@ -330,7 +347,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return errorText(`Unknown tool: ${name}`);
     }
   } catch (err) {
-    return errorText((err as Error).message);
+    return errorText(redactedMessage(err));
   }
 });
 
