@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/compute-finance/mcp/compare/v0.11.0...v0.12.0) (2026-09-22)
+
+
+### Features
+
+* answer for the user's own account when a grant is connected ([#63](https://github.com/compute-finance/mcp/issues/63)) ([27caa3e](https://github.com/compute-finance/mcp/commit/27caa3e35c3aae77054463301b75cd8bf7031c73))
+
 ## [0.11.0](https://github.com/compute-finance/mcp/compare/v0.10.0...v0.11.0) (2026-09-18)
 
 
