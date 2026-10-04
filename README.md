@@ -100,6 +100,8 @@ Prices also carry a `provenance` mark saying how far the number has been checked
 
 A price says what a model costs, never whether it can serve. `data_get_model_availability` answers that second question: the public pool's routability list — every catalogue model under its canonical id with a `routable` flag, plus the model `auto` points at. Call it before settling on a model, so one that cannot serve is ruled out before the request instead of by a 503 after it. **The signal is advisory**: true as of `computedAt` and only for `ttlSeconds` after it, capacity moves on its own, and a model reported routable can still fail the send — the caller still handles the error on the request itself. The answer is the exchange's own, served verbatim with no liveness computed here, so it cannot disagree with the router that has to honour it; it is cached for exactly the `ttlSeconds` published with it, and not at all when that figure is missing or unusable, rather than for the window every other read uses.
 
+Private offers are not listed. A model a supplier offers to a private pool, under a `handle/alias` id, never enters the public catalogue and is listed only to API keys bound to that pool — and this server sends no such key, with or without a connected account. To see them, call `GET /v1/models` with a `ct_live_*` key bound to the pool.
+
 ### Compute
 
 | Tool | Description |
