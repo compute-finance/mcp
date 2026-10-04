@@ -369,6 +369,7 @@ describe("toolDefinitions", () => {
     assert.ok(tool);
     assert.ok(tool.description.includes("Private offers are not listed"));
     assert.ok(tool.description.includes("`handle/alias`"));
+    assert.ok(tool.description.includes("only once the pool's owner accepts the offer"));
     assert.ok(tool.description.includes("`GET /v1/models` with a `ct_live_*` key bound to the pool"));
   });
 
