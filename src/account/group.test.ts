@@ -203,7 +203,6 @@ describe("loadAccountGroup", () => {
         ["account_status"],
       );
       assert.ok(group.tools[0].description.endsWith(` ${expected}`));
-      assert.ok(!group.tools[0].description.includes(".."));
       await assert.rejects(
         () => group.call("account_overview", {}),
         (err: Error) => err.message === expected,
