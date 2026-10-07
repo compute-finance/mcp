@@ -172,11 +172,24 @@ describe("loadAccountGroup", () => {
     assert.equal(asked, 0);
   });
 
-  for (const refusal of [
-    new AccountApiError("This app grant has been revoked", "app_grant_revoked", 401),
-    new AccountApiError("This app grant is frozen", "app_grant_frozen", 403),
+  const reconnect =
+    "Create a new grant in Settings → Connected apps and run `npx @compute-finance/mcp setup --account`.";
+
+  for (const { refusal, expected } of [
+    {
+      refusal: new AccountApiError("This app grant has been revoked", "app_grant_revoked", 401),
+      expected: `This app grant has been revoked. ${reconnect}`,
+    },
+    {
+      refusal: new AccountApiError("This app grant is frozen", "app_grant_frozen", 403),
+      expected: `This app grant is frozen. ${reconnect}`,
+    },
+    {
+      refusal: new AccountApiError("Account has been deleted.", "forbidden", 403),
+      expected: `Account has been deleted. ${reconnect}`,
+    },
   ]) {
-    it(`SHOULD keep the exchange's wording reachable WHEN discovery answers ${refusal.status} — Bug guarded: collapsing a refusal to "no account connected" sends the user to setup when the truth is that their grant was revoked`, async () => {
+    it(`SHOULD keep the exchange's wording "${refusal.message}" reachable as its own sentence before the reconnect hint WHEN discovery answers ${refusal.status} — Bug guarded: collapsing a refusal to "no account connected" sends the user to setup when the truth is that their grant was revoked`, async () => {
       const group = await loadAccountGroup(
         async () => TOKEN,
         async () => {
@@ -189,10 +202,11 @@ describe("loadAccountGroup", () => {
         group.tools.map((tool) => tool.name),
         ["account_status"],
       );
-      assert.ok(group.tools[0].description.includes(refusal.message));
+      assert.ok(group.tools[0].description.endsWith(` ${expected}`));
+      assert.ok(!group.tools[0].description.includes(".."));
       await assert.rejects(
         () => group.call("account_overview", {}),
-        (err: Error) => err.message.includes(refusal.message),
+        (err: Error) => err.message === expected,
       );
       assert.ok(!/No Compute Finance account is connected/.test(group.tools[0].description));
     });
