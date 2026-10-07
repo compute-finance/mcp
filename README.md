@@ -154,7 +154,7 @@ npx @compute-finance/mcp setup --account
 
 Setup asks for the token on stdin — typing is hidden, and the token is never an argument, so it cannot land in your shell history or in an MCP config file. It is then stored in the credential store your OS already ships: **macOS Keychain** (`security`), **Windows DPAPI** (a blob under `%APPDATA%` only your Windows user can decrypt), or the **Secret Service** on Linux (`secret-tool`, from libsecret). No native npm dependency is added for any of them.
 
-Setup checks the token with the exchange before storing it: a token the exchange refuses is not stored. On a system with none of these stores, setup stores nothing and points you at `CF_APP_GRANT_COMMAND` (below).
+Setup checks the token with the exchange before storing it: a token the exchange refuses is not stored. If the exchange cannot be reached, setup warns and stores the token anyway, so a token typed while offline is checked on the server's first start instead. On a system with none of these stores, setup stores nothing and points you at `CF_APP_GRANT_COMMAND` (below).
 
 Restart your MCP client. The `account_*` tools appear; with no credential they are simply not registered and the oracle and session tools behave exactly as before.
 
@@ -172,8 +172,8 @@ Wherever it came from, the token is only ever sent to an `https` origin — or t
 
 ### What a grant can and cannot do
 
-- A grant is limited to the operations you ticked when you created it, on the one account you pinned it to. **It can never move funds** — no withdrawal, no transfer, and no action that needs a wallet signature. Those stay with your wallet.
-- **Act access is not harmless.** An app holding it can create an API key that spends the account's balance, change or clear the budget caps that bound that spending, and configure automatic top-up, which charges your saved card. Tick it only for an app you would trust with those three; grant Read alone otherwise.
+- A grant is limited to the operations you ticked when you created it, on the one account you pinned it to. **It can never take money out of the account** — no withdrawal, no transfer, and no action that needs a wallet signature. Those stay with your wallet.
+- **Act access is not harmless.** An app holding it can create an API key that spends the account's balance, change or clear the budget caps that bound that spending, and configure automatic top-up. Automatic top-up always applies to your own personal account, even when the grant is pinned to an organization. Tick Act only for an app you would trust with those three; grant Read alone otherwise.
 - The exchange decides what each grant may call. `GET /v1/account-tools` returns only the tools that grant holds the access for, with their descriptions and input schemas; a call goes through `POST /v1/account-tools/call`. This package copies none of those contracts, so a change on the exchange's side reaches you without a release here.
 - A refusal is a refusal. When the exchange declines — the grant is frozen, revoked, or lacks the access a tool needs — the tool returns the exchange's own wording naming what is missing. It is never rewritten into an empty balance, an empty key list or a guess. A grant refused at startup registers a single `account_status` tool carrying that wording, rather than reporting no account at all.
 
