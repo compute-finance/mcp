@@ -364,6 +364,15 @@ describe("toolDefinitions", () => {
     assert.ok(tool.description.includes("canonical vendor-prefixed id"));
   });
 
+  it("SHOULD say data_get_model_availability does not list private offers AND where to see them — Bug guarded: an agent reading the public map as the whole supply concludes a pool's `handle/alias` model does not exist", () => {
+    const tool = toolDefinitions.find((t) => t.name === "data_get_model_availability");
+    assert.ok(tool);
+    assert.ok(tool.description.includes("Private offers are not listed"));
+    assert.ok(tool.description.includes("`handle/alias`"));
+    assert.ok(tool.description.includes("only once the pool's owner accepts the offer"));
+    assert.ok(tool.description.includes("`GET /v1/models` with a `ct_live_*` key bound to the pool"));
+  });
+
   it("SHOULD describe data_get_scu_at with the step-function and tie-break semantics — Bug guarded: agents must not interpolate or pick the wrong revision on equal publishedAt", () => {
     const tool = toolDefinitions.find((t) => t.name === "data_get_scu_at");
     assert.ok(tool);
