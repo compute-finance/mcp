@@ -110,9 +110,13 @@ function unreachableAccountGroup(message: string): AccountToolGroup {
   };
 }
 
+function asSentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
 function refusalOf(err: unknown): string | null {
   if (err instanceof AccountApiError && (err.status === 401 || err.status === 403)) {
-    return `${redactGrant(err.message)} ${RECONNECT}`;
+    return `${asSentence(redactGrant(err.message))} ${RECONNECT}`;
   }
   if (err instanceof UnsafeCredentialOrigin) return redactedMessage(err);
   return null;
