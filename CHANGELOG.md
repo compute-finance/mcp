@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/compute-finance/mcp/compare/v0.12.0...v0.12.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* end the exchange's refusal with a full stop before the reconnect hint ([#68](https://github.com/compute-finance/mcp/issues/68)) ([316fe09](https://github.com/compute-finance/mcp/commit/316fe09fb7e6124bfe503fa8698b1efbff5d5ea9))
+* say private pool offers are not listed and where to see them ([#67](https://github.com/compute-finance/mcp/issues/67)) ([0f69bd3](https://github.com/compute-finance/mcp/commit/0f69bd3e1735468d2657c4d94eff626380d7b2de))
+
 ## [0.12.0](https://github.com/compute-finance/mcp/compare/v0.11.0...v0.12.0) (2026-09-22)
 
 
