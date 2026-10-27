@@ -1,11 +1,6 @@
 name: release-please
 
-# Release PRs and releases by release-please; npm by trusted publishing, no stored npm token:
-# the trusted publisher of @compute-finance/mcp on npmjs.com names this file and environment
-# `release`, which refuses every ref but main and holds the release app's id and key.
-# `release-please` keeps the Release PR and tags its merge; `build` packs the tagged commit
-# (a commit of main) without any publishing right; `publish` publishes that tarball with
-# provenance; `register` publishes server.json to the MCP Registry.
+# npm trusts this file in environment `release` (trusted publishing): renaming either breaks publishing.
 
 on:
   push:
@@ -54,6 +49,9 @@ jobs:
     permissions:
       contents: read
     outputs:
+      name: ${{ steps.version.outputs.name }}
+      version: ${{ steps.version.outputs.version }}
+      server: ${{ steps.version.outputs.server }}
       tarball: ${{ steps.pack.outputs.tarball }}
       publish: ${{ steps.released.outputs.publish }}
     steps:
@@ -87,7 +85,7 @@ jobs:
           const npmPackage = server.packages.find(p => p.registryType === 'npm');
           assert.equal(npmPackage.identifier, pkg.name);
           assert.equal(npmPackage.version, pkg.version);
-          appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\nname=${pkg.name}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\nname=${pkg.name}\nserver=${server.name}\n`);
           NODE
 
       - name: Already on npm?
@@ -138,14 +136,6 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - name: npm 11.5.1 or later (trusted publishing)
-        run: |
-          npm --version
-          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$(npm --version)" \
-            || { echo "::error::Trusted publishing needs npm 11.5.1 or later."; exit 1; }
-
-      # No token: npm exchanges this job's OIDC identity (this repository, release-please.yml,
-      # environment release) for a short-lived publish token.
       - name: Publish to npm
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
@@ -167,8 +157,11 @@ jobs:
           name: release
 
       - name: Wait until npm serves the version
+        env:
+          NAME: ${{ needs.build.outputs.name }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          url="https://registry.npmjs.org/$(jq -r '.packages[0].identifier + "/" + .packages[0].version' server.json)"
+          url="https://registry.npmjs.org/$NAME/$VERSION"
           for _ in $(seq 1 40); do
             curl -fs -o /dev/null "$url" && exit 0
             sleep 15
@@ -177,11 +170,12 @@ jobs:
           exit 1
 
       - name: Publish to MCP Registry
+        env:
+          SERVER: ${{ needs.build.outputs.server }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          name="$(jq -r .name server.json)"
-          version="$(jq -r .version server.json)"
-          if curl -fs -o /dev/null "https://registry.modelcontextprotocol.io/v0.1/servers/${name//\//%2F}/versions/$version"; then
-            echo "$name $version is already in the MCP Registry."
+          if curl -fs -o /dev/null "https://registry.modelcontextprotocol.io/v0.1/servers/${SERVER//\//%2F}/versions/$VERSION"; then
+            echo "$SERVER $VERSION is already in the MCP Registry."
             exit 0
           fi
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher

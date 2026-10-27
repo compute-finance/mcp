@@ -69,9 +69,7 @@ All tools follow the `<layer>_<verb>` convention.
 
 Releases are automated via [release-please](https://github.com/googleapis/release-please). A "Release PR" titled `chore(main): release X.Y.Z` is kept open on `main` — it accumulates conventional commits since the last release, updates the version in `package.json` / `server.json`, and rewrites `CHANGELOG.md`.
 
-To cut a release: review the changelog in the open Release PR and merge it. Merging triggers tag creation, `npm publish` (with provenance), and publication to the MCP Registry — all in the same workflow, `.github/workflows/release-please.yml`. It publishes only commits of `main`, from `main`, in the `release` environment; npm accepts it by trusted publishing, so no npm token is stored.
-
-The Release PR is opened by the `compute-finance-release` app, whose id and key live in the `release` environment.
+To cut a release: review the changelog in the open Release PR and merge it. Merging triggers tag creation, `npm publish` (with provenance), and publication to the MCP Registry — all in the same workflow, `.github/workflows/release-please.yml`.
 
 If the publish fails after the release was tagged, re-run the failed jobs from the Actions tab, or run the workflow on `main` with the tag — publishing to npm and to the MCP Registry is skipped for a version that is already there.
 
