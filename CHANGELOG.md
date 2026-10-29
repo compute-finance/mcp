@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/compute-finance/mcp/compare/v0.12.1...v0.12.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update the MCP SDK and the dependencies with security advisories ([#71](https://github.com/compute-finance/mcp/issues/71)) ([e140c24](https://github.com/compute-finance/mcp/commit/e140c24b3cd720f9b86f2650e9ae84c838f615a9))
+
 ## [0.12.1](https://github.com/compute-finance/mcp/compare/v0.12.0...v0.12.1) (2026-10-20)
 
 
