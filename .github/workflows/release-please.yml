@@ -21,7 +21,11 @@ jobs:
   release-please:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
-    environment: release
+    # Only the release app's key: no deployment is recorded here, so a deployment of release
+    # is a published version, recorded by publish.
+    environment:
+      name: release
+      deployment: false
     permissions:
       contents: read
     outputs:
