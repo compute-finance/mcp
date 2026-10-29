@@ -1,0 +1,66 @@
+name: PR title
+
+# Never check out or execute code from the PR branch.
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: governance/pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Read current metadata so an old event cannot bypass a retargeted PR's check.
+      - name: Read current PR scope
+        id: scope
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const [{ data: pr }, { data: repository }] = await Promise.all([
+              github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number }),
+              github.rest.repos.get(context.repo)
+            ]);
+            const releaseAuthors = {
+              'e2xlabs': 'e2xlabs-release[bot]',
+              'compute-finance': 'compute-finance-release[bot]'
+            };
+            const releaseBranch = `release-please--branches--${repository.default_branch}`;
+            const componentPrefix = `${releaseBranch}--components--`;
+            const isReleaseBranch = pr.head.ref === releaseBranch ||
+              (pr.head.ref.startsWith(componentPrefix) && pr.head.ref.length > componentPrefix.length);
+            const service = pr.user.type === 'Bot' && pr.head.repo?.id === repository.id && (
+              (pr.user.login === 'dependabot[bot]' && pr.head.ref.startsWith('dependabot/')) ||
+              (pr.user.login === releaseAuthors[repository.owner.login.toLowerCase()] &&
+               isReleaseBranch)
+            );
+            return pr.base.ref === repository.default_branch && !service;
+      # Exempt service PRs still finish this required job successfully.
+      - name: Validate title and Jira key
+        if: steps.scope.outputs.result == 'true'
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          subjectPattern: '^\S(?:.*\S)? \[(?:CF|SCX|EF)-[1-9][0-9]*\]$'
+          subjectPatternError: 'Use type(scope): description [CF-123], [SCX-123] or [EF-123]; scope is optional and the task key must be last.'
