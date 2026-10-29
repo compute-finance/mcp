@@ -1,13 +1,17 @@
 name: release-please
 
+# npm trusts this file in environment `release` (trusted publishing): renaming either breaks publishing.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish, e.g. v0.11.0"
+        description: "Tag to publish again, e.g. v0.11.0 (its commit must be on main)"
         required: true
+
+permissions: {}
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -17,6 +21,9 @@ jobs:
   release-please:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -24,7 +31,7 @@ jobs:
       - uses: actions/create-github-app-token@v1
         id: app-token
         with:
-          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
 
       - id: release
@@ -34,53 +41,143 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  publish:
+  build:
     needs: release-please
     if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
-      id-token: write
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+      version: ${{ steps.version.outputs.version }}
+      server: ${{ steps.version.outputs.server }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+      publish: ${{ steps.released.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tagged commit is on main
+        run: |
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "::error::$(git rev-parse HEAD) is not a commit of main; only commits of main are published."; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          node-version: "24"
+
+      - name: Version and registry metadata
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const server = JSON.parse(readFileSync('server.json', 'utf8'));
+          assert.equal(process.env.RELEASE_TAG, `v${pkg.version}`);
+          assert.equal(server.version, pkg.version);
+          const npmPackage = server.packages.find(p => p.registryType === 'npm');
+          assert.equal(npmPackage.identifier, pkg.name);
+          assert.equal(npmPackage.version, pkg.version);
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${pkg.version}\nname=${pkg.name}\nserver=${server.name}\n`);
+          NODE
+
+      - name: Already on npm?
+        id: released
+        env:
+          NAME: ${{ steps.version.outputs.name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if curl -fs -o /dev/null "https://registry.npmjs.org/$NAME/$VERSION"; then
+            echo "$NAME@$VERSION is already on npm, nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - run: npm ci
+      - run: npm run build
 
-      - id: npm-package
-        run: |
-          echo "url=https://registry.npmjs.org/$(node -p 'const p = require("./server.json").packages[0]; `${p.identifier}/${p.version}`')" >> "$GITHUB_OUTPUT"
+      - name: Pack
+        id: pack
+        run: echo "tarball=$(npm pack --ignore-scripts --json | jq -r '.[0].filename')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            server.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.build.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Publish to npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_VERSION_URL: ${{ steps.npm-package.outputs.url }}
-        run: |
-          if curl -fsS -o /dev/null "$NPM_VERSION_URL"; then
-            echo "Already on npm, nothing to publish."
-          else
-            npm publish --access public --provenance
-          fi
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: npm publish "./$TARBALL" --access public --provenance
+
+  register:
+    needs: [build, publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.publish.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No environment: npm accepts only an identity of environment release, so the MCP
+    # publisher downloaded below cannot publish to npm.
+    permissions:
+      contents: read
+      id-token: write # MCP Registry login (github-oidc)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
 
       - name: Wait until npm serves the version
         env:
-          NPM_VERSION_URL: ${{ steps.npm-package.outputs.url }}
+          NAME: ${{ needs.build.outputs.name }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          url="https://registry.npmjs.org/$NAME/$VERSION"
           for _ in $(seq 1 40); do
-            curl -fsS -o /dev/null "$NPM_VERSION_URL" && exit 0
+            curl -fs -o /dev/null "$url" && exit 0
             sleep 15
           done
-          echo "::error::$NPM_VERSION_URL still 404 after 10 minutes; the MCP Registry would reject the publish."
+          echo "::error::$url still 404 after 10 minutes; the MCP Registry would reject the publish."
           exit 1
 
       - name: Publish to MCP Registry
+        env:
+          SERVER: ${{ needs.build.outputs.server }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          if curl -fs -o /dev/null "https://registry.modelcontextprotocol.io/v0.1/servers/${SERVER//\//%2F}/versions/$VERSION"; then
+            echo "$SERVER $VERSION is already in the MCP Registry."
+            exit 0
+          fi
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
